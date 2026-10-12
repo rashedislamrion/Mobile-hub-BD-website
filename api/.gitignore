@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+
+# environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# logs
+*.log
+npm-debug.log*
+
+# upload roots (anchored)
+/uploads/
+/private-uploads/
