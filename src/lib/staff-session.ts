@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Single source of truth for Staff session management.
  * Enforces sessionStorage-only storage so sessions do not persist across browser close.

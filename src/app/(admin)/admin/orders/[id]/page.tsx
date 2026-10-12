@@ -231,7 +231,7 @@ export default function OrderDetailsPage({ params }: { params: { id: string } })
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-md bg-slate-100 overflow-hidden relative shrink-0">
-                            <Image src={imgUrl} alt={item.productNameSnapshot} fill className="object-cover" />
+                            <Image src={imgUrl} alt={item.productNameSnapshot} fill unoptimized className="object-cover" />
                           </div>
                           <div>
                             <p className="font-medium text-slate-800">{item.productNameSnapshot}</p>

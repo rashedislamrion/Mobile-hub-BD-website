@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { User } from "lucide-react";
-import { BACKEND_URL } from "@/lib/api-client";
+import { getImageUrl } from "@/lib/api-client";
 
 interface CustomerAvatarProps {
   photo?: string | null;
@@ -54,12 +54,7 @@ export function CustomerAvatar({
   const initials = getInitials(name);
   const colorClass = getColor(name);
 
-  // Normalize image URL: if relative path e.g. /uploads/..., prefix with backend URL if needed
-  const resolvedPhoto = photo
-    ? photo.startsWith("http")
-      ? photo
-      : `${BACKEND_URL}${photo.startsWith("/") ? "" : "/"}${photo}`
-    : null;
+  const resolvedPhoto = photo ? getImageUrl(photo, '') : null;
 
   if (resolvedPhoto) {
     return (

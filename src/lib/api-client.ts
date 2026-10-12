@@ -1,8 +1,25 @@
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window === 'undefined' && process.env.INTERNAL_API_URL) ||
+  (process.env.PUBLIC_API_URL
+    ? `${process.env.PUBLIC_API_URL.replace(/\/+$/, '')}/api/v1`
+    : process.env.NODE_ENV === 'production'
+      ? 'https://api.mobilehubbd.tech/api/v1'
+      : 'http://localhost:4000/api/v1');
 
-export const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+/** Origin that serves /uploads — derived from NEXT_PUBLIC_API_URL by stripping /api/v1. */
+export const BACKEND_URL: string = (() => {
+  const fromApiUrl = (url: string | undefined) =>
+    url ? url.replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '') : '';
+  const resolved =
+    fromApiUrl(process.env.NEXT_PUBLIC_API_URL) ||
+    fromApiUrl(typeof window === 'undefined' ? process.env.INTERNAL_API_URL : undefined) ||
+    (process.env.PUBLIC_API_URL ? process.env.PUBLIC_API_URL.replace(/\/+$/, '') : '');
+  if (resolved) return resolved;
+  return process.env.NODE_ENV === 'production'
+    ? 'https://api.mobilehubbd.tech'
+    : 'http://localhost:4000';
+})();
 
 if (typeof window !== 'undefined') {
   if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_API_URL) {
@@ -31,7 +48,8 @@ let staffUnauthorizedListeners: Array<() => void> = [];
 let genericUnauthorizedListeners: Array<() => void> = [];
 
 export function getCustomerToken(): string | null {
-  if (!inMemoryCustomerToken && typeof window !== 'undefined') {
+  if (typeof window === 'undefined') return null;
+  if (!inMemoryCustomerToken) {
     inMemoryCustomerToken = localStorage.getItem(CUSTOMER_TOKEN_KEY);
   }
   return inMemoryCustomerToken;
@@ -49,6 +67,7 @@ export function setCustomerToken(token: string | null): void {
 }
 
 export function getStaffToken(): string | null {
+  if (typeof window === 'undefined') return null;
   return getSessionStaffToken();
 }
 
@@ -60,11 +79,13 @@ export function getEffectiveToken(
   endpoint?: string,
   explicitScope?: 'STAFF' | 'CUSTOMER'
 ): string | null {
+  if (typeof window === 'undefined') return null;
+
   if (explicitScope === 'STAFF') return getStaffToken();
   if (explicitScope === 'CUSTOMER') return getCustomerToken();
 
   const isStaffTarget =
-    (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) ||
+    window.location.pathname.startsWith('/admin') ||
     (endpoint && (endpoint.includes('/auth/staff') || endpoint.includes('/stock-adjustments/batch')));
 
   if (isStaffTarget) {
@@ -78,11 +99,9 @@ export function getEffectiveToken(
     return getCustomerToken() || getStaffToken();
   }
 
-  return (
-    (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')
-      ? getStaffToken() || getCustomerToken()
-      : getCustomerToken() || getStaffToken())
-  );
+  return window.location.pathname.startsWith('/admin')
+    ? getStaffToken() || getCustomerToken()
+    : getCustomerToken() || getStaffToken();
 }
 
 // Backwards-compatible aliases
@@ -154,10 +173,25 @@ export function getImageUrl(path?: string | null, fallback = '/images/placeholde
   if (!path) return fallback;
   if (typeof path !== 'string') return fallback;
   if (path.includes('placehold.co')) return fallback;
+
+  // Blob and data URLs (e.g. client-side image preview before upload) — pass through
+  if (path.startsWith('blob:') || path.startsWith('data:')) return path;
+
+  // Rewrite any localhost / 127.0.0.1 absolute URL to the public origin
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(path)) {
+    if (BACKEND_URL && !/localhost|127\.0\.0\.1/.test(BACKEND_URL)) {
+      return path.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, BACKEND_URL);
+    }
+    return path; // dev environment — keep as-is
+  }
+
+  // Other absolute URLs — pass through
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
+
+  // Relative paths — prefix with backend origin
   if (path.startsWith('/uploads/')) return `${BACKEND_URL}${path}`;
   if (path.startsWith('uploads/')) return `${BACKEND_URL}/${path}`;
-  if (path.startsWith('/')) return path;
+  if (path.startsWith('/')) return path; // e.g. /images/placeholder.png
   return `${BACKEND_URL}/uploads/${path}`;
 }
 
@@ -391,6 +425,21 @@ export async function apiPost<T>(
   return apiFetch<T>(endpoint, {
     ...options,
     method: 'POST',
+    body,
+  });
+}
+
+export async function apiPut<T>(
+  endpoint: string,
+  data?: any,
+  options?: ApiFetchOptions,
+): Promise<T> {
+  const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+  const body = isFormData ? data : data !== undefined ? JSON.stringify(data) : undefined;
+
+  return apiFetch<T>(endpoint, {
+    ...options,
+    method: 'PUT',
     body,
   });
 }

@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { apiGet, apiPost, apiPatch, getStaffToken, API_BASE_URL } from "@/lib/api-client";
+import { apiGet, apiPost, apiPatch, getStaffToken, API_BASE_URL, getImageUrl } from "@/lib/api-client";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -259,20 +259,10 @@ export function EmployeeForm({ initialData, isEdit }: EmployeeFormProps) {
 
       // If no files attached, we can also send JSON payload or standard FormData
       // Our apiPost/apiPatch can accept FormData directly
-      const url = isEdit ? `/employees/${initialData.id}` : "/employees";
-
-      const token = getStaffToken();
-      const res = await fetch(`${API_BASE_URL}${url}`, {
-        method: isEdit ? "PATCH" : "POST",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.message || "Failed to save employee");
+      if (isEdit) {
+        await apiPatch(`/employees/${initialData.id}`, formData, { authScope: "STAFF" });
+      } else {
+        await apiPost("/employees", formData, { authScope: "STAFF" });
       }
 
       toast.success(isEdit ? "Employee updated successfully!" : "Employee created successfully!");
@@ -494,7 +484,7 @@ export function EmployeeForm({ initialData, isEdit }: EmployeeFormProps) {
                     {photoPreview ? (
                       <>
                         <img
-                          src={photoPreview}
+                          src={getImageUrl(photoPreview)}
                           alt="Photo Preview"
                           className="w-full h-full object-cover rounded-lg"
                         />

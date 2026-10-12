@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { getStaffToken, API_BASE_URL } from "@/lib/api-client";
+import { apiPost } from "@/lib/api-client";
 
 const CUSTOMER_SOURCES = [
   "Walk-In",
@@ -75,23 +75,7 @@ export default function AddCustomerPage() {
       const formData = new FormData();
       formData.append("image", file);
 
-      const res = await fetch(
-        `${API_BASE_URL}/customers/upload`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${getStaffToken() || ""}`,
-          },
-          body: formData,
-        }
-      );
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to upload image");
-      }
-
-      const data = await res.json();
+      const data = await apiPost<any>("/customers/upload", formData, { authScope: "STAFF" });
       setProfileImageUrl(data.url);
       toast.success("Profile photo uploaded successfully.");
     } catch (err: any) {
@@ -176,22 +160,7 @@ export default function AddCustomerPage() {
         payload.profileImageUrl = profileImageUrl;
       }
 
-      const res = await fetch(
-        `${API_BASE_URL}/customers`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${getStaffToken() || ""}`,
-          },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to create customer");
-      }
+      await apiPost<any>("/customers", payload, { authScope: "STAFF" });
 
       toast.success(`Customer "${fullName}" created successfully!`);
       router.push("/admin/customers");

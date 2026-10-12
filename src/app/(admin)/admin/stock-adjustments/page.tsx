@@ -11,7 +11,7 @@ import { Eye, Trash2, Plus, ArrowUpRight, ArrowDownRight, RefreshCw } from "luci
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
-import { apiGet } from "@/lib/api-client";
+import { apiGet, getImageUrl } from "@/lib/api-client";
 
 export default function StockAdjustmentsPage() {
   const { setTitle, setBadge, setDateFilter, selectedBranchId } = useAdminPage();
@@ -72,7 +72,7 @@ export default function StockAdjustmentsPage() {
             productId: item.productId,
             productName: item.product?.name || item.productName || "Product",
             productSku: item.variant?.sku || item.productSku || "SKU-N/A",
-            productImage: item.product?.images?.[0]?.url || item.productImage || "https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?w=200&h=200&fit=crop",
+            productImage: getImageUrl(item.product?.images?.[0]?.url || item.productImage),
             type: adjType,
             quantityChange: Number(item.quantityChange || 0),
             stockBefore: Number(item.stockBefore || 0),
@@ -228,7 +228,7 @@ export default function StockAdjustmentsPage() {
       cell: ({ row }) => (
         <div className="flex items-center gap-3 max-w-[220px]">
           <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100 border border-slate-200 relative">
-            <Image src={row.original.productImage} alt="Product" fill className="object-cover" />
+            <Image src={row.original.productImage} alt="Product" fill unoptimized className="object-cover" />
           </div>
           <div className="overflow-hidden">
             <p className="font-semibold text-slate-800 text-sm truncate" title={row.original.productName}>{row.original.productName}</p>

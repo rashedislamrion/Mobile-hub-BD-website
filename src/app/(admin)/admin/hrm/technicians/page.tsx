@@ -19,7 +19,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api-client";
+import { apiGet, apiPost, apiPatch, apiDelete, getImageUrl } from "@/lib/api-client";
 import {
   Dialog,
   DialogContent,
@@ -273,7 +273,7 @@ export default function TechniciansPage() {
                         <div className="h-10 w-10 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold flex items-center justify-center shrink-0 overflow-hidden text-sm border border-border">
                           {tech.photo ? (
                             <img
-                              src={tech.photo}
+                              src={getImageUrl(tech.photo)}
                               alt={tech.name}
                               className="h-full w-full object-cover"
                             />

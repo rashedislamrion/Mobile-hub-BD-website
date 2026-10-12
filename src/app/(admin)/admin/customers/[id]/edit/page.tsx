@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiGet, apiPatch, getStaffToken, API_BASE_URL, BACKEND_URL } from "@/lib/api-client";
+import { apiGet, apiPatch, apiPost, getImageUrl } from "@/lib/api-client";
 import { toast } from "sonner";
 
 const CUSTOMER_SOURCES = [
@@ -69,10 +69,7 @@ export default function EditCustomerPage() {
         const photo = data.profileImageUrl || data.photo;
         if (photo) {
           setProfileImageUrl(photo);
-          const resolved = photo.startsWith("http")
-            ? photo
-            : `${BACKEND_URL}${photo.startsWith("/") ? "" : "/"}${photo}`;
-          setImagePreview(resolved);
+          setImagePreview(getImageUrl(photo));
         }
       } catch (err: any) {
         toast.error(err.message || "Failed to load customer details.");
@@ -108,23 +105,7 @@ export default function EditCustomerPage() {
       const formData = new FormData();
       formData.append("image", file);
 
-      const res = await fetch(
-        `${API_BASE_URL}/customers/upload`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${getStaffToken() || ""}`,
-          },
-          body: formData,
-        }
-      );
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to upload image");
-      }
-
-      const data = await res.json();
+      const data = await apiPost<any>("/customers/upload", formData, { authScope: "STAFF" });
       setProfileImageUrl(data.url);
       toast.success("Profile photo uploaded successfully.");
     } catch (err: any) {

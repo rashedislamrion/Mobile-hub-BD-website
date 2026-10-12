@@ -410,6 +410,7 @@ export default function WastedProductsPage() {
                               src={imgUrl}
                               alt={item.product.name}
                               fill
+                              unoptimized
                               sizes="40px"
                               className="object-contain p-1"
                             />
@@ -548,6 +549,7 @@ export default function WastedProductsPage() {
                       }
                       alt={selectedProduct.name}
                       fill
+                      unoptimized
                       sizes="48px"
                       className="object-contain p-1"
                     />

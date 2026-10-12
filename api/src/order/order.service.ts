@@ -1306,7 +1306,7 @@ export class OrderService {
     const frontendUrl =
       process.env.INTERNAL_FRONTEND_URL ||
       process.env.FRONTEND_URL ||
-      'http://localhost:3000';
+      (process.env.NODE_ENV === 'production' ? 'https://mobilehubbd.tech' : 'http://localhost:3000');
 
     const targetUrl = `${frontendUrl}/admin/pos/invoice-print/${order.id}${rawToken ? `?token=${encodeURIComponent(rawToken)}` : ''}`;
 

@@ -187,7 +187,7 @@ export default function SalesReturnDetailsPage({ params }: { params: { id: strin
                   return (
                     <div key={item.id} className="flex items-start gap-4">
                       <div className="w-16 h-16 rounded-lg overflow-hidden relative bg-slate-100 shrink-0 border border-slate-200">
-                        <Image src={img} alt="Return Item" fill className="object-cover" />
+                        <Image src={img} alt="Return Item" fill unoptimized className="object-cover" />
                       </div>
                       <div>
                         <p className="font-semibold text-slate-800">

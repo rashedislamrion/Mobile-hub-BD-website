@@ -548,6 +548,7 @@ export default function NewProductRequestPage() {
                             src={getImageUrl(prod.image)}
                             alt={prod.name}
                             fill
+                            unoptimized
                             className="object-cover"
                           />
                         ) : (

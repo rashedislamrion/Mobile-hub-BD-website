@@ -13,7 +13,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiGet } from "@/lib/api-client";
+import { apiGet, getImageUrl } from "@/lib/api-client";
 import { ReportKpiCard } from "@/components/admin/ReportKpiCard";
 import { ReportFilterBar } from "@/components/admin/ReportFilterBar";
 import { Badge } from "@/components/ui/badge";
@@ -299,7 +299,7 @@ export default function ProductStockReportPage() {
                           <div className="w-10 h-10 rounded-lg border border-border bg-muted/30 flex items-center justify-center shrink-0 overflow-hidden">
                             {row.image ? (
                               <img
-                                src={row.image}
+                                src={getImageUrl(row.image)}
                                 alt={row.productName}
                                 className="w-full h-full object-cover"
                               />

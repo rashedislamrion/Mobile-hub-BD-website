@@ -22,7 +22,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
+import { apiGet, apiPost, apiPatch, getImageUrl } from "@/lib/api-client";
 import {
   Dialog,
   DialogContent,
@@ -430,7 +430,7 @@ export default function PayrollPage() {
                             <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold flex items-center justify-center shrink-0 overflow-hidden text-xs border border-border">
                               {txn.staff.photo ? (
                                 <img
-                                  src={txn.staff.photo}
+                                  src={getImageUrl(txn.staff.photo)}
                                   alt={txn.staff.name}
                                   className="h-full w-full object-cover"
                                 />

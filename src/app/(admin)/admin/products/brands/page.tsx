@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useAdminPage } from "@/contexts/AdminPageContext";
-import { apiGet, apiPatch, apiDelete, BACKEND_URL, getStaffToken } from "@/lib/api-client";
+import { apiGet, apiPost, apiPatch, apiDelete, getImageUrl } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
   Search,
@@ -172,13 +172,7 @@ export default function BrandsPage() {
     setFormMetaTitle(brand.metaTitle || "");
     setFormMetaDescription(brand.metaDescription || "");
     setLogoFile(null);
-    setLogoPreview(
-      brand.logo
-        ? brand.logo.startsWith("http")
-          ? brand.logo
-          : `${BACKEND_URL}${brand.logo}`
-        : null,
-    );
+    setLogoPreview(brand.logo ? getImageUrl(brand.logo) : null);
     setActiveTab("description");
     setIsModalOpen(true);
     setTimeout(() => {
@@ -291,18 +285,7 @@ export default function BrandsPage() {
         await apiPatch(`/brands/${editingBrand.id}`, formData);
         toast.success(`Brand "${formName}" updated successfully!`);
       } else {
-        const staffToken = getStaffToken() || "";
-        const res = await fetch(`${BACKEND_URL}/api/v1/brands`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${staffToken}`,
-          },
-          body: formData,
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || "Failed to create brand");
-        }
+        await apiPost("/brands", formData);
         toast.success(`Brand "${formName}" created successfully!`);
       }
       setIsModalOpen(false);
@@ -433,9 +416,7 @@ export default function BrandsPage() {
               >
                 {filteredBrands.map((brand, idx) => {
                   const logoUrl = brand.logo
-                    ? brand.logo.startsWith("http")
-                      ? brand.logo
-                      : `${BACKEND_URL}${brand.logo}`
+                    ? getImageUrl(brand.logo)
                     : null;
 
                   return (

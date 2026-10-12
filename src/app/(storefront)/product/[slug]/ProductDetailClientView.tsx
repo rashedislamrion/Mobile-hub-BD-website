@@ -150,6 +150,17 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
   const availableColors = Array.from(new Set(product.variants?.map(v => v.color).filter(Boolean) as string[]));
   const availableQualities = Array.from(new Set(product.variants?.map(v => v.quality).filter(Boolean) as string[]));
 
+  // Review metrics (real reviews only)
+  const reviewsList = product.reviews || [];
+  const reviewsCount = reviewsList.length;
+  const averageRating =
+    reviewsCount > 0
+      ? (
+          reviewsList.reduce((acc, r) => acc + (Number(r.rating) || 0), 0) /
+          reviewsCount
+        ).toFixed(1)
+      : null;
+
   const handleAddToCart = () => {
     if (isOutOfStock || !product) return;
     addItem({
@@ -276,18 +287,27 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
             </div>
           </div>
 
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex items-center text-amber-400">
-              <Star className="w-4 h-4 fill-current" />
-              <Star className="w-4 h-4 fill-current" />
-              <Star className="w-4 h-4 fill-current" />
-              <Star className="w-4 h-4 fill-current" />
-              <Star className="w-4 h-4 fill-current" />
+          {reviewsCount > 0 && averageRating && (
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex items-center text-amber-400">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star
+                    key={i}
+                    className={`w-4 h-4 ${
+                      i < Math.round(Number(averageRating))
+                        ? "fill-current"
+                        : "text-slate-200"
+                    }`}
+                  />
+                ))}
+              </div>
+              <span className="text-sm font-medium text-slate-600">{averageRating}</span>
+              <span className="text-slate-300">•</span>
+              <Link href="#reviews" className="text-sm text-primary hover:underline">
+                {reviewsCount} {reviewsCount === 1 ? "Review" : "Reviews"}
+              </Link>
             </div>
-            <span className="text-sm font-medium text-slate-600">4.9</span>
-            <span className="text-slate-300">•</span>
-            <Link href="#reviews" className="text-sm text-primary hover:underline">128 Reviews</Link>
-          </div>
+          )}
 
           <div className="flex items-end gap-3 mb-3">
             <span className="text-3xl font-bold text-slate-900">৳{currentPrice.toLocaleString()}</span>

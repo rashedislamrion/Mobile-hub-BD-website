@@ -1,6 +1,7 @@
 import React from "react";
 import { PosInvoiceReceipt } from "@/components/admin/pos/PosInvoiceReceipt";
 import { headers } from "next/headers";
+import { API_BASE_URL } from "@/lib/api-client";
 
 interface InvoicePrintPageProps {
   params: { orderId: string };
@@ -18,11 +19,6 @@ export default async function InvoicePrintPage({
     searchParams?.token ||
     (authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null);
 
-  const backendUrl =
-    process.env.INTERNAL_BACKEND_URL ||
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    "http://localhost:4000";
-
   let order: any = null;
   let shopSettings: any = null;
   let errorMessage: string | null = null;
@@ -34,11 +30,11 @@ export default async function InvoicePrintPage({
     }
 
     const [orderRes, settingsRes] = await Promise.all([
-      fetch(`${backendUrl}/api/v1/orders/${orderId}`, {
+      fetch(`${API_BASE_URL}/orders/${orderId}`, {
         headers: fetchHeaders,
         cache: "no-store",
       }),
-      fetch(`${backendUrl}/api/v1/business-settings`, {
+      fetch(`${API_BASE_URL}/business-settings`, {
         cache: "no-store",
       }).catch(() => null),
     ]);

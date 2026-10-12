@@ -33,6 +33,14 @@ async function bootstrap() {
   validateJwtSecret('JWT_ACCESS_SECRET', jwtAccessSecret);
   validateJwtSecret('JWT_REFRESH_SECRET', jwtRefreshSecret);
 
+  // Validate PUBLIC_API_URL in production
+  const publicApiUrl = process.env.PUBLIC_API_URL;
+  if (isProduction && (!publicApiUrl || publicApiUrl.includes('localhost') || publicApiUrl.includes('127.0.0.1'))) {
+    throw new Error(
+      '[FATAL CONFIG ERROR] PUBLIC_API_URL is missing or invalid in production! It must be set to your public API URL (e.g. https://api.mobilehubbd.tech).',
+    );
+  }
+
   // B1.4: Startup verification of upload directories
   const uploadDir = process.env.UPLOAD_ROOT || join(process.cwd(), 'uploads');
   const privateUploadDir =

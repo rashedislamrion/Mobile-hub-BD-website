@@ -54,7 +54,10 @@ export class SslcommerzService {
     const { storeId, storePassword, baseUrl } = await this.getCredentials();
 
     const apiBase =
-      apiBaseUrl || process.env.API_URL || 'http://localhost:4000/api/v1';
+      apiBaseUrl ||
+      (process.env.PUBLIC_API_URL
+        ? `${process.env.PUBLIC_API_URL.replace(/\/+$/, '')}/api/v1`
+        : process.env.API_URL || (process.env.NODE_ENV === 'production' ? 'https://api.mobilehubbd.tech/api/v1' : 'http://localhost:4000/api/v1'));
     const successUrl = `${apiBase}/payments/sslcommerz/success?orderId=${order.id}`;
     const failUrl = `${apiBase}/payments/sslcommerz/fail?orderId=${order.id}`;
     const cancelUrl = `${apiBase}/payments/sslcommerz/cancel?orderId=${order.id}`;
@@ -279,7 +282,11 @@ export class SslcommerzService {
   }
 
   async handleSuccess(query: any, body: any) {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://mobilehubbd.tech'
+        : 'http://localhost:3000');
     const orderId = query?.orderId || body?.tran_id || query?.tran_id;
     const valId = body?.val_id || query?.val_id;
     const bankTranId = body?.bank_tran_id || query?.bank_tran_id;
@@ -296,13 +303,21 @@ export class SslcommerzService {
   }
 
   async handleFail(query: any, body: any) {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://mobilehubbd.tech'
+        : 'http://localhost:3000');
     const orderId = query?.orderId || body?.tran_id || query?.tran_id;
     return `${frontendUrl}/order/payment-failed?orderId=${orderId || ''}&reason=Failed`;
   }
 
   async handleCancel(query: any, body: any) {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://mobilehubbd.tech'
+        : 'http://localhost:3000');
     const orderId = query?.orderId || body?.tran_id || query?.tran_id;
     return `${frontendUrl}/order/payment-failed?orderId=${orderId || ''}&reason=Cancelled`;
   }

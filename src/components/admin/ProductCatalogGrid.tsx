@@ -197,6 +197,7 @@ export function ProductCatalogGrid({
                       src={imgUrl}
                       alt={p.name}
                       fill
+                      unoptimized
                       sizes="(max-width: 768px) 50vw, 25vw"
                       className="object-contain p-1.5 group-hover:scale-105 transition-transform"
                     />

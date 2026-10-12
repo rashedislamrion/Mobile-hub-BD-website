@@ -140,6 +140,12 @@ function main() {
     const val = actualValues.get(key);
     if (isPlaceholder(val)) {
       missingOrEmpty.push(key);
+    } else if (
+      key === 'PUBLIC_API_URL' &&
+      (resolvedTarget.includes('production') || resolvedTarget.includes('prod')) &&
+      (val.includes('localhost') || val.includes('127.0.0.1'))
+    ) {
+      missingOrEmpty.push(`${key} (must not be localhost in production)`);
     }
   }
 

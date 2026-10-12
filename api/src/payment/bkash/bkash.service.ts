@@ -92,7 +92,10 @@ export class BkashService {
     );
 
     const apiBase =
-      callbackBaseUrl || process.env.API_URL || 'http://localhost:4000/api/v1';
+      callbackBaseUrl ||
+      (process.env.PUBLIC_API_URL
+        ? `${process.env.PUBLIC_API_URL.replace(/\/+$/, '')}/api/v1`
+        : process.env.API_URL || (process.env.NODE_ENV === 'production' ? 'https://api.mobilehubbd.tech/api/v1' : 'http://localhost:4000/api/v1'));
     const callbackURL = `${apiBase}/payments/bkash/callback?orderId=${order.id}`;
 
     const createRes = await fetch(`${baseUrl}/tokenized/checkout/create`, {
@@ -144,7 +147,11 @@ export class BkashService {
     status?: string;
     orderId?: string;
   }) {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://mobilehubbd.tech'
+        : 'http://localhost:3000');
     const { paymentID, status, orderId } = query;
 
     if (!paymentID || status !== 'success') {

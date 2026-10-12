@@ -388,6 +388,7 @@ export default function CategoryManagementPage() {
                 src={node.image ? getImageUrl(node.image) : "/placeholder.png"}
                 alt={node.name}
                 fill
+                unoptimized
                 sizes="24px"
                 className="object-contain p-0.5"
               />
@@ -547,6 +548,7 @@ export default function CategoryManagementPage() {
                           src={previewImageUrl}
                           alt="Category icon preview"
                           fill
+                          unoptimized
                           sizes="96px"
                           className="object-contain p-2"
                         />

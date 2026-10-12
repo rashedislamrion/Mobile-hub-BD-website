@@ -44,8 +44,9 @@ const nextConfig = {
     ignoreBuildErrors: false,
   },
   async headers() {
-    const apiOrigin = getSafeOrigin(process.env.NEXT_PUBLIC_API_URL) || 'http://localhost:4000';
-    const backendOrigin = getSafeOrigin(process.env.NEXT_PUBLIC_BACKEND_URL) || 'http://localhost:4000';
+    const isProd = process.env.NODE_ENV === 'production';
+    const apiOrigin = getSafeOrigin(process.env.NEXT_PUBLIC_API_URL) || (isProd ? 'https://api.mobilehubbd.tech' : 'http://localhost:4000');
+    const backendOrigin = getSafeOrigin(process.env.NEXT_PUBLIC_BACKEND_URL) || (isProd ? 'https://api.mobilehubbd.tech' : 'http://localhost:4000');
     const r2Origin = getSafeOrigin(process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL);
 
     const allowedImgSources = [
@@ -53,13 +54,14 @@ const nextConfig = {
       "data:",
       "blob:",
       "https:",
+      apiOrigin,
       backendOrigin,
       r2Origin,
     ].filter(Boolean).join(' ');
 
     const allowedConnectSources = [
       "'self'",
-      "http://localhost:4000",
+      !isProd ? "http://localhost:4000" : null,
       "https:",
       "ws:",
       "wss:",
@@ -177,6 +179,11 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
+        hostname: 'api.mobilehubbd.tech',
+        pathname: '/uploads/**',
+      },
+      {
+        protocol: 'https',
         hostname: 'images.unsplash.com',
         pathname: '/**',
       },
@@ -190,23 +197,27 @@ const nextConfig = {
         hostname: 'placehold.co',
         pathname: '/**',
       },
-      {
-        protocol: 'http',
-        hostname: 'localhost',
-        port: '4000',
-        pathname: '/**',
-      },
-      {
-        protocol: 'http',
-        hostname: '127.0.0.1',
-        port: '4000',
-        pathname: '/**',
-      },
-      {
-        protocol: 'http',
-        hostname: 'localhost',
-        pathname: '/**',
-      },
+      ...(process.env.NODE_ENV !== 'production'
+        ? [
+            {
+              protocol: 'http',
+              hostname: 'localhost',
+              port: '4000',
+              pathname: '/**',
+            },
+            {
+              protocol: 'http',
+              hostname: '127.0.0.1',
+              port: '4000',
+              pathname: '/**',
+            },
+            {
+              protocol: 'http',
+              hostname: 'localhost',
+              pathname: '/**',
+            },
+          ]
+        : []),
       ...(process.env.NEXT_PUBLIC_BACKEND_URL && getSafeHostname(process.env.NEXT_PUBLIC_BACKEND_URL)
         ? [
             {

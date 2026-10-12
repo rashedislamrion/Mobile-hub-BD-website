@@ -179,7 +179,7 @@ export default function ExchangeDetailsPage({ params }: { params: { id: string }
             {/* Old Item */}
             <div className="flex-1 bg-white border border-slate-200 rounded-xl p-5 text-center shadow-sm w-full">
               <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-slate-100 mb-4 overflow-hidden relative border border-slate-200">
-                <Image src={oldImg} alt="Old Item" fill className="object-cover" />
+                <Image src={oldImg} alt="Old Item" fill unoptimized className="object-cover" />
               </div>
               <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1">Old Item</h4>
               <p className="font-semibold text-slate-800 text-lg">
@@ -196,7 +196,7 @@ export default function ExchangeDetailsPage({ params }: { params: { id: string }
             {/* New Item */}
             <div className="flex-1 bg-emerald-50/30 border border-emerald-100 rounded-xl p-5 text-center shadow-sm w-full">
               <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white mb-4 overflow-hidden relative border border-emerald-200">
-                <Image src={newImg} alt="New Item" fill className="object-cover" />
+                <Image src={newImg} alt="New Item" fill unoptimized className="object-cover" />
               </div>
               <h4 className="text-sm font-bold text-emerald-600 uppercase tracking-wider mb-1">New Item</h4>
               <p className="font-semibold text-slate-800 text-lg">{exchange.newProduct?.name || "New Product"}</p>

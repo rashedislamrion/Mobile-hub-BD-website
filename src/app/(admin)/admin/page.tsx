@@ -513,7 +513,7 @@ export default function AdminDashboardPage() {
                   <div key={product.id} className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors">
                     <div className="relative w-12 h-12 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
                       {product.image ? (
-                        <Image src={getImageUrl(product.image)} alt={product.name} fill className="object-cover" />
+                        <Image src={getImageUrl(product.image)} alt={product.name} fill unoptimized className="object-cover" />
                       ) : (
                         <Package className="w-6 h-6 m-3 text-slate-400" />
                       )}
