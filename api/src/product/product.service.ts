@@ -395,11 +395,77 @@ export class ProductService {
       product.productCategory === 'PHONE' ||
       product.productType?.toLowerCase() === 'phone' ||
       product.category?.name?.toLowerCase().includes('phone');
-    const mappedVariants = product.variants.map((v: any) => ({
-      ...v,
-      stock: isPhone ? (v.phoneUnits?.length ?? 0) : v.stock,
-      phoneUnits: undefined, // Never expose raw IMEIs on public storefront
+    const mappedVariants = product.variants.map((v: any) => {
+      let attrs: Record<string, any> = {};
+      if (v.attributes && typeof v.attributes === 'object') {
+        attrs = { ...v.attributes };
+      } else if (typeof v.attributes === 'string') {
+        try {
+          attrs = JSON.parse(v.attributes);
+        } catch {
+          attrs = {};
+        }
+      }
+
+      const colorVal = v.color || attrs.Color || attrs.color || null;
+      const qualityVal = v.quality || attrs.Quality || attrs.quality || null;
+      if (colorVal && !attrs.Color && !attrs.color) {
+        attrs.Color = colorVal;
+      }
+      if (qualityVal && !attrs.Quality && !attrs.quality) {
+        attrs.Quality = qualityVal;
+      }
+
+      return {
+        ...v,
+        color: colorVal,
+        quality: qualityVal,
+        attributes: attrs,
+        stock: isPhone ? (v.phoneUnits?.length ?? 0) : v.stock,
+        phoneUnits: undefined, // Never expose raw IMEIs on public storefront
+      };
+    });
+
+    const groupMap = new Map<string, Set<string>>();
+    for (const v of mappedVariants) {
+      if (v.attributes && typeof v.attributes === 'object') {
+        for (const [rawKey, rawVal] of Object.entries(v.attributes)) {
+          if (!rawVal || rawKey === 'customName') continue;
+          const valStr = String(rawVal).trim();
+          if (!valStr) continue;
+
+          let groupKey = rawKey.trim();
+          if (groupKey.toLowerCase() === 'color') groupKey = 'Color';
+          else if (groupKey.toLowerCase() === 'quality') groupKey = 'Quality';
+          else if (groupKey.toLowerCase() === 'box') groupKey = 'Box';
+          else if (groupKey.toLowerCase() === 'frame') groupKey = 'Frame';
+          else if (groupKey.toLowerCase() === 'storage') groupKey = 'Storage';
+          else if (groupKey.toLowerCase() === 'region') groupKey = 'Region';
+          else if (groupKey.toLowerCase() === 'ram') groupKey = 'RAM';
+
+          if (!groupMap.has(groupKey)) {
+            groupMap.set(groupKey, new Set<string>());
+          }
+          groupMap.get(groupKey)!.add(valStr);
+        }
+      }
+    }
+
+    const priorityOrder = ['Color', 'Quality', 'Box', 'Frame', 'Storage', 'RAM', 'Region'];
+    const sortedGroupEntries = Array.from(groupMap.entries()).sort(([a], [b]) => {
+      const idxA = priorityOrder.indexOf(a);
+      const idxB = priorityOrder.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    const attributeGroups = sortedGroupEntries.map(([name, set]) => ({
+      name,
+      values: Array.from(set),
     }));
+
     const totalStock = mappedVariants.reduce(
       (sum, v) => sum + (Number(v.stock) || 0),
       0,
@@ -447,6 +513,7 @@ export class ProductService {
     return sanitizePublicProduct({
       ...product,
       variants: mappedVariants,
+      attributeGroups,
       totalStock,
       relatedProducts: mappedRelated,
     });
@@ -704,11 +771,31 @@ export class ProductService {
       if (dto.variants && dto.variants.length > 0) {
         for (let idx = 0; idx < dto.variants.length; idx++) {
           const v = dto.variants[idx];
+          let parsedAttributes: any = v.attributes;
+          if (parsedAttributes && typeof parsedAttributes === 'string') {
+            try {
+              parsedAttributes = JSON.parse(parsedAttributes);
+            } catch {
+              parsedAttributes = {};
+            }
+          }
+          if (!parsedAttributes || typeof parsedAttributes !== 'object') {
+            parsedAttributes = {};
+          }
+          const chosenColor = v.color || parsedAttributes.Color || parsedAttributes.color || null;
+          const chosenQuality = v.quality || parsedAttributes.Quality || parsedAttributes.quality || null;
+          if (chosenColor && !parsedAttributes.Color && !parsedAttributes.color) {
+            parsedAttributes.Color = chosenColor;
+          }
+          if (chosenQuality && !parsedAttributes.Quality && !parsedAttributes.quality) {
+            parsedAttributes.Quality = chosenQuality;
+          }
+
           const variant = await tx.productVariant.create({
             data: {
               productId: product.id,
-              color: v.color || null,
-              quality: v.quality || null,
+              color: chosenColor,
+              quality: chosenQuality,
               price: new Prisma.Decimal(v.price || dto.regularPrice || 0),
               stock: Number(v.stock) || 0,
               sku: v.sku?.trim() || `${slug.toUpperCase()}-V${idx + 1}`,
@@ -728,11 +815,7 @@ export class ProductService {
               offerPrice: v.offerPrice
                 ? new Prisma.Decimal(v.offerPrice)
                 : null,
-              attributes: v.attributes
-                ? typeof v.attributes === 'object'
-                  ? v.attributes
-                  : JSON.parse(v.attributes)
-                : null,
+              attributes: Object.keys(parsedAttributes).length > 0 ? parsedAttributes : null,
             },
           });
 
@@ -928,11 +1011,31 @@ export class ProductService {
 
         for (let idx = 0; idx < dto.variants.length; idx++) {
           const v = dto.variants[idx];
+          let parsedAttributes: any = v.attributes;
+          if (parsedAttributes && typeof parsedAttributes === 'string') {
+            try {
+              parsedAttributes = JSON.parse(parsedAttributes);
+            } catch {
+              parsedAttributes = {};
+            }
+          }
+          if (!parsedAttributes || typeof parsedAttributes !== 'object') {
+            parsedAttributes = {};
+          }
+          const chosenColor = v.color || parsedAttributes.Color || parsedAttributes.color || null;
+          const chosenQuality = v.quality || parsedAttributes.Quality || parsedAttributes.quality || null;
+          if (chosenColor && !parsedAttributes.Color && !parsedAttributes.color) {
+            parsedAttributes.Color = chosenColor;
+          }
+          if (chosenQuality && !parsedAttributes.Quality && !parsedAttributes.quality) {
+            parsedAttributes.Quality = chosenQuality;
+          }
+
           const createdVariant = await tx.productVariant.create({
             data: {
               productId: id,
-              color: v.color || null,
-              quality: v.quality || null,
+              color: chosenColor,
+              quality: chosenQuality,
               price: new Prisma.Decimal(
                 v.price ?? dto.regularPrice ?? existing.regularPrice,
               ),
@@ -950,11 +1053,7 @@ export class ProductService {
               offerPrice: v.offerPrice
                 ? new Prisma.Decimal(v.offerPrice)
                 : null,
-              attributes: v.attributes
-                ? typeof v.attributes === 'object'
-                  ? v.attributes
-                  : JSON.parse(v.attributes)
-                : null,
+              attributes: Object.keys(parsedAttributes).length > 0 ? parsedAttributes : null,
             },
           });
 

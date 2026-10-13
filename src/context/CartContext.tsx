@@ -13,6 +13,7 @@ export interface CartItem {
   maxStock: number;
   color?: string;
   quality?: string;
+  attributes?: Record<string, string>;
 }
 
 interface CartContextType {
@@ -107,6 +108,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           maxStock,
           color: item.color,
           quality: item.quality,
+          attributes: item.attributes,
         },
       ];
     });

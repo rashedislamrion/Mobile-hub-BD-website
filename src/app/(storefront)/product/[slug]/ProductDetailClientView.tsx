@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { OFFICIAL_CONTACT } from "@/config/contact";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -27,6 +27,76 @@ import { apiGet, getImageUrl } from "@/lib/api-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCart } from "@/context/CartContext";
 
+const COLOR_HEX_MAP: Record<string, string> = {
+  black: "#000000",
+  white: "#FFFFFF",
+  silver: "#C0C0C0",
+  gray: "#808080",
+  grey: "#808080",
+  "space gray": "#4B4B4D",
+  "space grey": "#4B4B4D",
+  gold: "#FFD700",
+  rose: "#FF007F",
+  "rose gold": "#B76E79",
+  red: "#EF4444",
+  blue: "#3B82F6",
+  "deep purple": "#3E2A54",
+  purple: "#8B5CF6",
+  green: "#10B981",
+  midnight: "#191970",
+  starlight: "#F8F9FA",
+  "natural titanium": "#9E988D",
+  "black titanium": "#2F3133",
+  "white titanium": "#E5E5EA",
+  "blue titanium": "#35404E",
+  "desert titanium": "#C3B19B",
+  yellow: "#FBBF24",
+  orange: "#F97316",
+};
+
+function getColorHex(name: string): string | null {
+  const clean = name.toLowerCase().trim();
+  return COLOR_HEX_MAP[clean] || null;
+}
+
+function deriveAttributeGroups(variants: any[]): Array<{ name: string; values: string[] }> {
+  const map = new Map<string, Set<string>>();
+  for (const v of variants) {
+    const attrs: Record<string, any> = { ...(v.attributes || {}) };
+    if (v.color && !attrs.Color && !attrs.color) attrs.Color = v.color;
+    if (v.quality && !attrs.Quality && !attrs.quality) attrs.Quality = v.quality;
+
+    for (const [key, val] of Object.entries(attrs)) {
+      if (!val || key === "customName") continue;
+      const str = String(val).trim();
+      if (!str) continue;
+      let name = key.trim();
+      if (name.toLowerCase() === "color") name = "Color";
+      else if (name.toLowerCase() === "quality") name = "Quality";
+      else if (name.toLowerCase() === "box") name = "Box";
+      else if (name.toLowerCase() === "frame") name = "Frame";
+      else if (name.toLowerCase() === "storage") name = "Storage";
+      else if (name.toLowerCase() === "region") name = "Region";
+      else if (name.toLowerCase() === "ram") name = "RAM";
+
+      if (!map.has(name)) map.set(name, new Set());
+      map.get(name)!.add(str);
+    }
+  }
+
+  const priorityOrder = ["Color", "Quality", "Box", "Frame", "Storage", "RAM", "Region"];
+  return Array.from(map.entries())
+    .sort(([a], [b]) => {
+      const ia = priorityOrder.indexOf(a);
+      const ib = priorityOrder.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    })
+    .map(([name, set]) => ({ name, values: Array.from(set) }));
+}
+
 interface ProductDetailData {
   id: string;
   name: string;
@@ -40,7 +110,16 @@ interface ProductDetailData {
   category?: { id: string; name: string; slug: string } | null;
   brand?: { id: string; name: string; slug: string } | null;
   images: Array<{ id: string; url: string; sortOrder: number }>;
-  variants: Array<{ id: string; color?: string | null; quality?: string | null; price: number; stock: number; sku?: string }>;
+  variants: Array<{
+    id: string;
+    color?: string | null;
+    quality?: string | null;
+    price: number;
+    stock: number;
+    sku?: string;
+    attributes?: Record<string, string> | null;
+  }>;
+  attributeGroups?: Array<{ name: string; values: string[] }>;
   specifications: Array<{ id: string; label: string; value: string }>;
   reviews?: Array<{
     id: string;
@@ -60,8 +139,7 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
 
   // Active selections
   const [selectedImage, setSelectedImage] = useState<string>("");
-  const [selectedColor, setSelectedColor] = useState<string>("");
-  const [selectedQuality, setSelectedQuality] = useState<string>("");
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState(1);
   const [isWishlist, setIsWishlist] = useState(false);
   const [supportPhone, setSupportPhone] = useState(OFFICIAL_CONTACT.phone.tel);
@@ -76,10 +154,23 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
         if (data?.images?.length) {
           setSelectedImage(data.images[0].url);
         }
-        if (data?.variants?.length) {
-          if (data.variants[0].color) setSelectedColor(data.variants[0].color);
-          if (data.variants[0].quality) setSelectedQuality(data.variants[0].quality);
-        }
+
+        const groups = data?.attributeGroups?.length
+          ? data.attributeGroups
+          : deriveAttributeGroups(data?.variants || []);
+        const v0 = data?.variants?.[0];
+
+        const initialSelected: Record<string, string> = {};
+        groups.forEach((g) => {
+          if (g.values.length > 0) {
+            const v0Val =
+              v0?.attributes?.[g.name] ||
+              v0?.attributes?.[g.name.toLowerCase()] ||
+              (g.name === "Color" ? v0?.color : g.name === "Quality" ? v0?.quality : null);
+            initialSelected[g.name] = v0Val || g.values[0];
+          }
+        });
+        setSelectedAttributes(initialSelected);
       } catch (err: any) {
         toast.error(err.message || "Failed to load product details");
       } finally {
@@ -135,20 +226,87 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
     );
   }
 
-  // Calculate pricing & stock based on active variant selection
-  const activeVariant = product.variants?.find(
-    v => (v.color === selectedColor || !v.color) && (v.quality === selectedQuality || !v.quality)
-  ) || product.variants?.[0];
+  const attributeGroups = useMemo(() => {
+    if (product?.attributeGroups && product.attributeGroups.length > 0) {
+      return product.attributeGroups;
+    }
+    return deriveAttributeGroups(product?.variants || []);
+  }, [product]);
+
+  const handleSelectAttribute = (groupName: string, value: string) => {
+    setSelectedAttributes((prev) => ({
+      ...prev,
+      [groupName]: value,
+    }));
+  };
+
+  // Calculate pricing & stock based on active variant selection across all attribute groups
+  const activeVariant = useMemo(() => {
+    if (!product?.variants || product.variants.length === 0) return null;
+
+    // 1. Try finding exact match across all selectedAttributes
+    const exact = product.variants.find((v) => {
+      const vAttrs: Record<string, any> = { ...(v.attributes || {}) };
+      if (v.color && !vAttrs.Color && !vAttrs.color) vAttrs.Color = v.color;
+      if (v.quality && !vAttrs.Quality && !vAttrs.quality) vAttrs.Quality = v.quality;
+
+      for (const [groupName, selectedVal] of Object.entries(selectedAttributes)) {
+        if (!selectedVal) continue;
+        const vVal =
+          vAttrs[groupName] ??
+          vAttrs[groupName.toLowerCase()] ??
+          (groupName === "Color" ? v.color : groupName === "Quality" ? v.quality : undefined);
+        if (
+          vVal !== undefined &&
+          vVal !== null &&
+          String(vVal).trim() !== String(selectedVal).trim()
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (exact) return exact;
+
+    // 2. Fallback: variant matching the most selected attributes
+    let bestVariant = product.variants[0];
+    let maxMatches = -1;
+
+    for (const v of product.variants) {
+      const vAttrs: Record<string, any> = { ...(v.attributes || {}) };
+      if (v.color && !vAttrs.Color && !vAttrs.color) vAttrs.Color = v.color;
+      if (v.quality && !vAttrs.Quality && !vAttrs.quality) vAttrs.Quality = v.quality;
+
+      let matches = 0;
+      for (const [groupName, selectedVal] of Object.entries(selectedAttributes)) {
+        if (!selectedVal) continue;
+        const vVal =
+          vAttrs[groupName] ??
+          vAttrs[groupName.toLowerCase()] ??
+          (groupName === "Color" ? v.color : groupName === "Quality" ? v.quality : undefined);
+        if (
+          vVal !== undefined &&
+          vVal !== null &&
+          String(vVal).trim() === String(selectedVal).trim()
+        ) {
+          matches++;
+        }
+      }
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        bestVariant = v;
+      }
+    }
+
+    return bestVariant;
+  }, [product, selectedAttributes]);
 
   const currentPrice = activeVariant ? Number(activeVariant.price) : Number(product.salePrice || product.regularPrice);
   const regularPrice = Number(product.regularPrice);
   const saveAmount = regularPrice > currentPrice ? regularPrice - currentPrice : 0;
   const currentStock = activeVariant ? activeVariant.stock : (product.status === "ACTIVE" ? 10 : 0);
   const isOutOfStock = currentStock <= 0 || product.status === "OUT_OF_STOCK";
-
-  // Distinct colors and qualities
-  const availableColors = Array.from(new Set(product.variants?.map(v => v.color).filter(Boolean) as string[]));
-  const availableQualities = Array.from(new Set(product.variants?.map(v => v.quality).filter(Boolean) as string[]));
 
   // Review metrics (real reviews only)
   const reviewsList = product.reviews || [];
@@ -171,8 +329,9 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
       price: currentPrice,
       quantity,
       maxStock: currentStock,
-      color: selectedColor,
-      quality: selectedQuality,
+      color: selectedAttributes["Color"] || activeVariant?.color || undefined,
+      quality: selectedAttributes["Quality"] || activeVariant?.quality || undefined,
+      attributes: selectedAttributes,
     });
     setIsCartOpen(true);
   };
@@ -187,8 +346,9 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
       price: currentPrice,
       quantity,
       maxStock: currentStock,
-      color: selectedColor,
-      quality: selectedQuality,
+      color: selectedAttributes["Color"] || activeVariant?.color || undefined,
+      quality: selectedAttributes["Quality"] || activeVariant?.quality || undefined,
+      attributes: selectedAttributes,
     });
     router.push('/checkout');
   };
@@ -336,50 +496,76 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
 
           <hr className="border-slate-100 mb-8" />
 
-          {/* Variants */}
-          <div className="flex flex-col gap-6 mb-8">
-            {availableColors.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 mb-3">Color</h3>
-                <div className="flex flex-wrap gap-2">
-                  {availableColors.map(color => (
-                    <button
-                      key={color}
-                      onClick={() => setSelectedColor(color)}
-                      className={`px-4 py-2 rounded-full border text-sm font-medium transition-all ${
-                        selectedColor === color 
-                          ? 'border-primary bg-primary/5 text-primary' 
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {color}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* All Attribute Groups (Color, Quality, Box, Frame, etc.) */}
+          {attributeGroups.length > 0 && (
+            <div className="flex flex-col gap-6 mb-8">
+              {attributeGroups.map((group) => {
+                const isColorGroup =
+                  group.name.toLowerCase() === "color" || group.name.toLowerCase() === "colour";
+                const currentVal = selectedAttributes[group.name] || "";
 
-            {availableQualities.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 mb-3">Quality / Variant</h3>
-                <div className="flex flex-wrap gap-2">
-                  {availableQualities.map(quality => (
-                    <button
-                      key={quality}
-                      onClick={() => setSelectedQuality(quality)}
-                      className={`px-4 py-2 rounded-full border text-sm font-medium transition-all ${
-                        selectedQuality === quality 
-                          ? 'border-primary bg-primary/5 text-primary' 
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {quality}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+                return (
+                  <div key={group.name} className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                        <span>{group.name}</span>
+                        {currentVal && (
+                          <span className="text-xs font-normal text-slate-500">
+                            : <strong className="text-slate-800">{currentVal}</strong>
+                          </span>
+                        )}
+                      </h3>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2.5">
+                      {group.values.map((val) => {
+                        const isSelected = currentVal === val;
+
+                        if (isColorGroup) {
+                          const hex = getColorHex(val);
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => handleSelectAttribute(group.name, val)}
+                              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                                isSelected
+                                  ? "border-primary bg-primary/5 text-primary ring-1 ring-primary font-bold shadow-xs"
+                                  : "border-slate-200 text-slate-700 bg-white hover:border-slate-300"
+                              }`}
+                            >
+                              {hex && (
+                                <span
+                                  className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
+                                  style={{ backgroundColor: hex }}
+                                />
+                              )}
+                              <span>{val}</span>
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => handleSelectAttribute(group.name, val)}
+                            className={`px-4 py-2 rounded-xl border text-xs font-medium transition-all ${
+                              isSelected
+                                ? "border-primary bg-primary text-white font-semibold shadow-xs"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Add to Cart actions */}
           <div className="flex flex-col sm:flex-row items-stretch gap-4 mb-6">
