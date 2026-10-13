@@ -19,7 +19,7 @@ export class PhoneUnitService {
 
   async checkImei(imei: string) {
     if (!imei || !imei.trim()) {
-      return { exists: false, message: 'No IMEI provided' };
+      return { exists: false, available: false, isAvailable: false, message: 'No IMEI provided' };
     }
     const cleanImei = imei.trim();
 
@@ -45,14 +45,27 @@ export class PhoneUnitService {
       return {
         exists: true,
         available: false,
+        isAvailable: false,
         message: `IMEI ${cleanImei} already exists (${existing.status} at ${existing.branch?.name || 'Branch'})`,
         unit: existing,
+      };
+    }
+
+    const is15Digits = /^\d{15}$/.test(cleanImei);
+    if (!is15Digits) {
+      return {
+        exists: false,
+        available: false,
+        isAvailable: false,
+        invalid: true,
+        message: 'IMEI must be exactly 15 numeric digits',
       };
     }
 
     return {
       exists: false,
       available: true,
+      isAvailable: true,
       message: 'New IMEI available',
     };
   }

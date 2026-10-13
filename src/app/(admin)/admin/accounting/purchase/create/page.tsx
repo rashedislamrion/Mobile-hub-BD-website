@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useAdminPage } from "@/contexts/AdminPageContext";
 import { useRouter } from "next/navigation";
 import {
@@ -103,8 +103,8 @@ export interface PhoneUnitIntake {
   warrantyEndDate?: string;
   buyingPrice?: number;
   sellingPrice?: number;
-  imei1Status?: "idle" | "checking" | "valid" | "duplicate";
-  imei2Status?: "idle" | "checking" | "valid" | "duplicate";
+  imei1Status?: "idle" | "checking" | "valid" | "duplicate" | "invalid" | "error";
+  imei2Status?: "idle" | "checking" | "valid" | "duplicate" | "invalid" | "error";
 }
 
 interface ShipmentLineItem {
@@ -228,8 +228,17 @@ export default function CreatePurchaseOrderPage() {
     });
   };
 
+  const imeiTimersRef = useRef<Record<string, any>>({});
+  const lineItemsRef = useRef<ShipmentLineItem[]>([]);
+
   const checkImeiDebounced = useCallback((unitIndex: number, field: "imei1" | "imei2", val: string) => {
     const trimmed = val.trim();
+    const timerKey = `${unitIndex}-${field}`;
+    if (imeiTimersRef.current[timerKey]) {
+      clearTimeout(imeiTimersRef.current[timerKey]);
+      delete imeiTimersRef.current[timerKey];
+    }
+
     if (!trimmed) {
       setModalPhoneUnits((prev) =>
         prev.map((u, i) => (i === unitIndex ? { ...u, [`${field}Status`]: "idle" } : u))
@@ -237,29 +246,105 @@ export default function CreatePurchaseOrderPage() {
       return;
     }
 
-    setModalPhoneUnits((prev) =>
-      prev.map((u, i) => (i === unitIndex ? { ...u, [`${field}Status`]: "checking" } : u))
+    // Require numeric digits
+    if (!/^\d+$/.test(trimmed)) {
+      setModalPhoneUnits((prev) =>
+        prev.map((u, i) => (i === unitIndex ? { ...u, [`${field}Status`]: "invalid" } : u))
+      );
+      return;
+    }
+
+    // Must be 15 digits
+    if (trimmed.length !== 15) {
+      setModalPhoneUnits((prev) =>
+        prev.map((u, i) => (i === unitIndex ? { ...u, [`${field}Status`]: "invalid" } : u))
+      );
+      return;
+    }
+
+    // Check local duplicate inside current purchase cart
+    const isDuplicateInCart = lineItemsRef.current.some((item) =>
+      item.isPhone &&
+      item.phoneUnits?.some((pu) => pu.imei1?.trim() === trimmed || pu.imei2?.trim() === trimmed)
     );
 
-    apiGet<{ isAvailable: boolean; message?: string }>(`/phone-units/check-imei?imei=${encodeURIComponent(trimmed)}`)
-      .then((res) => {
-        setModalPhoneUnits((prev) => {
-          const isDuplicateInModal = prev.some((u, i) => {
-            if (i === unitIndex) return false;
-            return u.imei1 === trimmed || u.imei2 === trimmed;
-          });
+    // Check local duplicate inside current modal units
+    let isDuplicateInModal = false;
+    setModalPhoneUnits((prev) => {
+      isDuplicateInModal = prev.some((u, i) => {
+        if (i === unitIndex) {
+          return field === "imei1"
+            ? (u.imei2?.trim() === trimmed)
+            : (u.imei1?.trim() === trimmed);
+        }
+        return u.imei1?.trim() === trimmed || u.imei2?.trim() === trimmed;
+      });
 
-          const isDuplicate = !res.isAvailable || isDuplicateInModal;
-          return prev.map((u, i) =>
-            i === unitIndex ? { ...u, [`${field}Status`]: isDuplicate ? "duplicate" : "valid" } : u
+      if (isDuplicateInCart || isDuplicateInModal) {
+        return prev.map((u, i) =>
+          i === unitIndex ? { ...u, [`${field}Status`]: "duplicate" } : u
+        );
+      }
+
+      return prev.map((u, i) =>
+        i === unitIndex ? { ...u, [`${field}Status`]: "checking" } : u
+      );
+    });
+
+    if (isDuplicateInCart || isDuplicateInModal) return;
+
+    // Debounce the API call by 300ms
+    imeiTimersRef.current[timerKey] = setTimeout(() => {
+      apiGet<{ exists?: boolean; available?: boolean; isAvailable?: boolean; message?: string }>(
+        `/phone-units/check-imei?imei=${encodeURIComponent(trimmed)}`
+      )
+        .then((res) => {
+          setModalPhoneUnits((prev) => {
+            return prev.map((u, i) => {
+              if (i !== unitIndex) return u;
+              const currentVal = (u[field] || "").trim();
+              if (currentVal !== trimmed) return u;
+
+              const dupCart = lineItemsRef.current.some((item) =>
+                item.isPhone &&
+                item.phoneUnits?.some((pu) => pu.imei1?.trim() === trimmed || pu.imei2?.trim() === trimmed)
+              );
+              const dupModal = prev.some((otherU, otherI) => {
+                if (otherI === unitIndex) {
+                  return field === "imei1"
+                    ? otherU.imei2?.trim() === trimmed
+                    : otherU.imei1?.trim() === trimmed;
+                }
+                return otherU.imei1?.trim() === trimmed || otherU.imei2?.trim() === trimmed;
+              });
+
+              if (dupCart || dupModal) {
+                return { ...u, [`${field}Status`]: "duplicate" };
+              }
+
+              // Only treat as exists if DB explicitly says exists === true
+              // Never treat undefined, null, or string "false" as exists
+              const existsInDb = res?.exists === true;
+              if (existsInDb) {
+                return { ...u, [`${field}Status`]: "duplicate" };
+              }
+
+              return { ...u, [`${field}Status`]: "valid" };
+            });
+          });
+        })
+        .catch(() => {
+          // On request error show a neutral "could not verify" message
+          setModalPhoneUnits((prev) =>
+            prev.map((u, i) => {
+              if (i !== unitIndex) return u;
+              const currentVal = (u[field] || "").trim();
+              if (currentVal !== trimmed) return u;
+              return { ...u, [`${field}Status`]: "error" };
+            })
           );
         });
-      })
-      .catch(() => {
-        setModalPhoneUnits((prev) =>
-          prev.map((u, i) => (i === unitIndex ? { ...u, [`${field}Status`]: "idle" } : u))
-        );
-      });
+    }, 300);
   }, []);
 
   const handleModalQuantityChange = (newQty: number) => {
@@ -318,6 +403,9 @@ export default function CreatePurchaseOrderPage() {
 
   // Shipment Line Items
   const [lineItems, setLineItems] = useState<ShipmentLineItem[]>([]);
+  useEffect(() => {
+    lineItemsRef.current = lineItems;
+  }, [lineItems]);
 
   // Payment Details State
   const [useAdvance, setUseAdvance] = useState(false);
@@ -721,17 +809,33 @@ export default function CreatePurchaseOrderPage() {
       }
       for (let i = 0; i < modalPhoneUnits.length; i++) {
         const u = modalPhoneUnits[i];
-        if (!u.imei1.trim()) {
+        const imei1Clean = u.imei1.trim();
+        if (!imei1Clean) {
           toast.error(`Phone unit #${i + 1} requires IMEI 1.`);
+          return;
+        }
+        if (!/^\d{15}$/.test(imei1Clean)) {
+          toast.error(`IMEI 1 "${imei1Clean}" for Unit #${i + 1} must be exactly 15 digits.`);
           return;
         }
         if (u.imei1Status === "duplicate") {
           toast.error(`IMEI 1 "${u.imei1}" for Unit #${i + 1} already exists. Duplicate IMEIs are rejected.`);
           return;
         }
-        if (u.imei2?.trim() && u.imei2Status === "duplicate") {
-          toast.error(`IMEI 2 "${u.imei2}" for Unit #${i + 1} already exists. Duplicate IMEIs are rejected.`);
-          return;
+        const imei2Clean = u.imei2?.trim();
+        if (imei2Clean) {
+          if (!/^\d{15}$/.test(imei2Clean)) {
+            toast.error(`IMEI 2 "${imei2Clean}" for Unit #${i + 1} must be exactly 15 digits.`);
+            return;
+          }
+          if (imei2Clean === imei1Clean) {
+            toast.error(`IMEI 2 cannot be identical to IMEI 1 for Unit #${i + 1}.`);
+            return;
+          }
+          if (u.imei2Status === "duplicate") {
+            toast.error(`IMEI 2 "${u.imei2}" for Unit #${i + 1} already exists. Duplicate IMEIs are rejected.`);
+            return;
+          }
         }
       }
     }
@@ -863,15 +967,44 @@ export default function CreatePurchaseOrderPage() {
     try {
       setIsSubmitting(true);
 
+      const allCartImeis = new Set<string>();
       for (const item of lineItems) {
         if (item.isPhone && item.phoneUnits) {
           for (let i = 0; i < item.phoneUnits.length; i++) {
             const u = item.phoneUnits[i];
-            if (!u.imei1?.trim()) {
+            const im1 = u.imei1?.trim();
+            if (!im1) {
               toast.error(`Phone "${item.productName}" unit #${i + 1} is missing IMEI 1.`);
               setIsSubmitting(false);
               return;
             }
+            if (!/^\d{15}$/.test(im1)) {
+              toast.error(`Phone "${item.productName}" unit #${i + 1} IMEI 1 must be exactly 15 digits.`);
+              setIsSubmitting(false);
+              return;
+            }
+            if (allCartImeis.has(im1)) {
+              toast.error(`Duplicate IMEI "${im1}" found in cart.`);
+              setIsSubmitting(false);
+              return;
+            }
+            allCartImeis.add(im1);
+
+            const im2 = u.imei2?.trim();
+            if (im2) {
+              if (!/^\d{15}$/.test(im2)) {
+                toast.error(`Phone "${item.productName}" unit #${i + 1} IMEI 2 must be exactly 15 digits.`);
+                setIsSubmitting(false);
+                return;
+              }
+              if (im2 === im1 || allCartImeis.has(im2)) {
+                toast.error(`Duplicate IMEI "${im2}" found in cart.`);
+                setIsSubmitting(false);
+                return;
+              }
+              allCartImeis.add(im2);
+            }
+
             if (u.imei1Status === "duplicate" || u.imei2Status === "duplicate") {
               toast.error(`Duplicate IMEI detected on "${item.productName}". Purchase cannot be completed.`);
               setIsSubmitting(false);
@@ -2080,6 +2213,16 @@ export default function CreatePurchaseOrderPage() {
                                   ❌ Already Exists
                                 </span>
                               )}
+                              {unit.imei1Status === "invalid" && (
+                                <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300 font-medium">
+                                  ⚠️ 15 digits required
+                                </span>
+                              )}
+                              {unit.imei1Status === "error" && (
+                                <span className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300 font-medium">
+                                  ⚠️ Could not verify
+                                </span>
+                              )}
                               {unit.imei1Status === "valid" && (
                                 <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 font-bold">
                                   ✅ New IMEI
@@ -2098,6 +2241,8 @@ export default function CreatePurchaseOrderPage() {
                                   ? "border-rose-500 ring-1 ring-rose-500"
                                   : unit.imei1Status === "valid"
                                   ? "border-emerald-500 ring-1 ring-emerald-500"
+                                  : unit.imei1Status === "invalid"
+                                  ? "border-amber-400"
                                   : ""
                               }`}
                             />
@@ -2118,6 +2263,16 @@ export default function CreatePurchaseOrderPage() {
                                   ❌ Already Exists
                                 </span>
                               )}
+                              {unit.imei2Status === "invalid" && (
+                                <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300 font-medium">
+                                  ⚠️ 15 digits required
+                                </span>
+                              )}
+                              {unit.imei2Status === "error" && (
+                                <span className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300 font-medium">
+                                  ⚠️ Could not verify
+                                </span>
+                              )}
                               {unit.imei2Status === "valid" && (
                                 <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 font-bold">
                                   ✅ New IMEI
@@ -2136,6 +2291,8 @@ export default function CreatePurchaseOrderPage() {
                                   ? "border-rose-500 ring-1 ring-rose-500"
                                   : unit.imei2Status === "valid"
                                   ? "border-emerald-500 ring-1 ring-emerald-500"
+                                  : unit.imei2Status === "invalid"
+                                  ? "border-amber-400"
                                   : ""
                               }`}
                             />
@@ -2339,7 +2496,17 @@ export default function CreatePurchaseOrderPage() {
                     isPhoneProduct(modalProduct) &&
                     (modalPhoneUnits.length === 0 ||
                       modalPhoneUnits.some(
-                        (u) => !u.imei1.trim() || u.imei1Status === "duplicate" || u.imei2Status === "duplicate"
+                        (u) =>
+                          !/^\d{15}$/.test(u.imei1.trim()) ||
+                          u.imei1Status === "duplicate" ||
+                          u.imei1Status === "invalid" ||
+                          u.imei1Status === "checking" ||
+                          (u.imei2?.trim()
+                            ? !/^\d{15}$/.test(u.imei2.trim()) ||
+                              u.imei2Status === "duplicate" ||
+                              u.imei2Status === "invalid" ||
+                              u.imei2Status === "checking"
+                            : false)
                       ))
                   }
                   onClick={handleAddLineItem}

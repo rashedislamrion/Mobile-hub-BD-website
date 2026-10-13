@@ -372,6 +372,11 @@ export class PurchaseOrderService {
               'IMEI 1 is required for all phone units.',
             );
           }
+          if (!/^\d{15}$/.test(imei1)) {
+            throw new BadRequestException(
+              `IMEI 1 "${imei1}" must be exactly 15 digits.`,
+            );
+          }
 
           if (seenImeisInRequest.has(imei1)) {
             throw new ConflictException(
@@ -381,6 +386,16 @@ export class PurchaseOrderService {
           seenImeisInRequest.add(imei1);
 
           if (imei2) {
+            if (!/^\d{15}$/.test(imei2)) {
+              throw new BadRequestException(
+                `IMEI 2 "${imei2}" must be exactly 15 digits.`,
+              );
+            }
+            if (imei2 === imei1) {
+              throw new BadRequestException(
+                `IMEI 2 cannot be identical to IMEI 1 for the same unit.`,
+              );
+            }
             if (seenImeisInRequest.has(imei2)) {
               throw new ConflictException(
                 `Duplicate IMEI "${imei2}" found within the submitted purchase order items.`,
