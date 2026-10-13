@@ -1107,11 +1107,26 @@ export class PurchaseOrderService {
       });
     }
 
+    // Check for phone units that have been sold or assigned — cannot delete
+    const soldUnits = (po.phoneUnits || []).filter(
+      (u: any) => u.status !== 'IN_STOCK',
+    );
+    if (soldUnits.length > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: `Cannot delete purchase order "${po.poNumber}" because ${soldUnits.length} phone unit(s) have been sold or assigned.`,
+        canDeactivate: false,
+      });
+    }
+
     if (po.documentUrl) {
       await storageService.safeUnlink(po.documentUrl);
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Delete phone units linked to this PO (only IN_STOCK ones reach here)
+      await tx.phoneUnit.deleteMany({ where: { purchaseId: id } });
       await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
       return tx.purchaseOrder.delete({ where: { id } });
     });

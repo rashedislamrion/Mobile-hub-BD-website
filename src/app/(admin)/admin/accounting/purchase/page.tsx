@@ -18,6 +18,7 @@ import {
   MoreVertical,
   Layers,
   Package,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { apiGet, apiPost } from "@/lib/api-client";
+import { apiGet, apiPost, apiDelete } from "@/lib/api-client";
 import { AdminTableState } from "@/components/admin/AdminTableState";
 
 interface PurchaseOrderItem {
@@ -114,6 +115,10 @@ export default function PurchaseOrdersPage() {
   const [selectedPoForReturn, setSelectedPoForReturn] = useState<PurchaseOrderItem | null>(null);
   const [returnItemsMap, setReturnItemsMap] = useState<Record<string, { qty: number; reason: string }>>({});
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
+
+  // Delete Dialog State
+  const [deleteTarget, setDeleteTarget] = useState<PurchaseOrderItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     setTitle("All Purchases");
@@ -206,6 +211,22 @@ export default function PurchaseOrdersPage() {
       toast.error(err.message || "Failed to return purchase items");
     } finally {
       setIsSubmittingReturn(false);
+    }
+  };
+
+  // Delete Purchase Order
+  const handleDeletePO = async () => {
+    if (!deleteTarget) return;
+    try {
+      setIsDeleting(true);
+      await apiDelete(`/purchase-orders/${deleteTarget.id}`);
+      toast.success(`Purchase order "${deleteTarget.poNumber}" deleted successfully.`);
+      setDeleteTarget(null);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete purchase order");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -544,6 +565,15 @@ export default function PurchaseOrdersPage() {
                                 <RotateCcw className="w-4 h-4 mr-2 text-amber-600" /> Return Items
                               </DropdownMenuItem>
                             )}
+
+                            {po.status === "DRAFT" && (
+                              <DropdownMenuItem
+                                onClick={() => setDeleteTarget(po)}
+                                className="text-xs cursor-pointer text-red-600 focus:text-red-700 focus:bg-red-50"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2 text-red-500" /> Delete
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>
@@ -714,6 +744,43 @@ export default function PurchaseOrdersPage() {
                 </Button>
               </div>
             </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-700">Delete Purchase Order</DialogTitle>
+          </DialogHeader>
+          {deleteTarget && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Are you sure you want to permanently delete <strong>{deleteTarget.poNumber}</strong>?
+                This will also remove all linked phone units (IMEI entries) and line items.
+              </p>
+              <p className="text-xs text-red-500 font-medium">This action cannot be undone.</p>
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeleteTarget(null)}
+                  className="rounded-xl text-xs"
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleDeletePO}
+                  disabled={isDeleting}
+                  className="rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
+                >
+                  {isDeleting ? "Deleting..." : "Delete"}
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>
