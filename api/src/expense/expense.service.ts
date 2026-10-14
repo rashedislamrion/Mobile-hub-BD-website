@@ -426,16 +426,39 @@ export class ExpenseService {
 
   async removeExpense(id: string, user?: JwtPayload) {
     const exp = await this.findOneExpense(id, user);
-    if (exp.status === ExpenseStatus.PAID) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: `Cannot delete paid expense "${exp.referenceNo}". It has ledger/financial impact.`,
-      });
-    }
-    if (exp.attachmentUrl) {
-      await storageService.safeUnlink(exp.attachmentUrl);
-    }
-    return this.prisma.expense.delete({ where: { id } });
+
+    return this.prisma.$transaction(async (tx) => {
+      // Reversal: If expense was PAID and tied to a wallet, restore wallet balance
+      if (exp.status === ExpenseStatus.PAID && exp.walletTypeId) {
+        const wallet = await tx.walletType.findUnique({
+          where: { id: exp.walletTypeId },
+        });
+        if (wallet) {
+          const newBal = Number(wallet.currentBalance) + Number(exp.amount);
+          await tx.walletType.update({
+            where: { id: exp.walletTypeId },
+            data: { currentBalance: newBal },
+          });
+
+          await tx.walletTransaction.create({
+            data: {
+              walletTypeId: exp.walletTypeId,
+              type: WalletTxnType.DEPOSIT,
+              amount: exp.amount,
+              referenceNo: `REV-EXP-${exp.referenceNo}-${Date.now()}`,
+              note: `Reversal for deleted expense: ${exp.description || exp.referenceNo}`,
+              recordedById: (user?.sub && user.userType === 'STAFF') ? user.sub : exp.recordedById,
+              balanceAfter: newBal,
+            },
+          });
+        }
+      }
+
+      if (exp.attachmentUrl) {
+        await storageService.safeUnlink(exp.attachmentUrl);
+      }
+
+      return tx.expense.delete({ where: { id } });
+    });
   }
 }

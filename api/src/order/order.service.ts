@@ -25,6 +25,7 @@ import {
   Prisma,
   SaleType,
   ServiceJobStatus,
+  ShipmentStatus,
 } from '@prisma/client';
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
@@ -1374,33 +1375,17 @@ export class OrderService {
   async remove(id: string, user?: JwtPayload) {
     const order = await this.findOne(id, user);
 
-    if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.CANCELLED) {
+    if (order.shipment && (order.shipment.status === ShipmentStatus.IN_TRANSIT || order.shipment.status === ShipmentStatus.DELIVERED)) {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
-        message: `Cannot delete order "${order.orderCode}" with status "${order.status}". Please cancel the order instead.`,
-      });
-    }
-
-    const paymentCount = await this.prisma.payment.count({ where: { orderId: id } });
-    if (paymentCount > 0 || Number(order.paidAmount) > 0) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: `Cannot delete order "${order.orderCode}" because it has recorded payment transactions. Financial records cannot be deleted.`,
-      });
-    }
-
-    if (order.shipment) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: `Cannot delete order "${order.orderCode}" because it has a linked courier shipment.`,
+        message: `Cannot delete order "${order.orderCode}" because it has an active or delivered courier shipment (${order.shipment.status}).`,
       });
     }
 
     return this.prisma.$transaction(async (tx) => {
-      if (order.status === OrderStatus.PENDING) {
+      // 1. Inventory & Phone Units Reversal if stock was deducted
+      if (order.status !== OrderStatus.CANCELLED) {
         for (const item of order.items) {
           if (item.variantId) {
             await tx.branchInventory.updateMany({
@@ -1414,10 +1399,35 @@ export class OrderService {
             });
           }
         }
+
+        // Revert assigned phone units back to IN_STOCK
+        await tx.phoneUnit.updateMany({
+          where: { saleId: id },
+          data: {
+            status: 'IN_STOCK',
+            saleId: null,
+            orderItemId: null,
+          },
+        });
       }
 
+      // 2. Remove associated payments
+      await tx.payment.deleteMany({ where: { orderId: id } });
+
+      // 3. Remove order tracking, notes, and shipment
       await tx.orderStatusHistory.deleteMany({ where: { orderId: id } });
       await tx.orderNote.deleteMany({ where: { orderId: id } });
+
+      if (order.serviceJob) {
+        await tx.serviceJobMaterial.deleteMany({ where: { serviceJobId: order.serviceJob.id } });
+        await tx.serviceJob.delete({ where: { id: order.serviceJob.id } });
+      }
+
+      if (order.shipment) {
+        await tx.shipment.delete({ where: { orderId: id } });
+      }
+
+      // 4. Remove order line items and order record
       await tx.orderItem.deleteMany({ where: { orderId: id } });
       return tx.order.delete({ where: { id } });
     });

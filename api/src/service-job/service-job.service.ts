@@ -785,22 +785,30 @@ export class ServiceJobService {
       });
     }
 
-    if (existing.orderId) {
-      const paymentCount = await this.prisma.payment.count({
-        where: { orderId: existing.orderId },
-      });
-      if (paymentCount > 0) {
-        throw new ConflictException({
-          statusCode: 409,
-          error: 'Conflict',
-          message: `Cannot delete service job "${existing.invoiceNo || existing.id}" because it has ${paymentCount} recorded payment(s).`,
-        });
-      }
-    }
-
     return this.prisma.$transaction(async (tx) => {
+      // 1. Reversal: Restore materials inventory if sourced from OWN_STOCK
+      const materials = await tx.serviceJobMaterial.findMany({ where: { serviceJobId: id } });
+      for (const mat of materials) {
+        if (mat.productId && mat.sourceType === 'OWN_STOCK' && existing.branchId) {
+          const variant = await tx.productVariant.findFirst({ where: { productId: mat.productId } });
+          if (variant) {
+            await tx.branchInventory.updateMany({
+              where: {
+                branchId: existing.branchId,
+                productVariantId: variant.id,
+              },
+              data: {
+                quantity: { increment: mat.quantity },
+              },
+            });
+          }
+        }
+      }
+
       await tx.serviceJobMaterial.deleteMany({ where: { serviceJobId: id } });
+
       if (existing.orderId) {
+        await tx.payment.deleteMany({ where: { orderId: existing.orderId } });
         await tx.serviceJob.delete({ where: { id } });
         await tx.orderItem.deleteMany({ where: { orderId: existing.orderId } });
         await tx.orderStatusHistory.deleteMany({ where: { orderId: existing.orderId } });

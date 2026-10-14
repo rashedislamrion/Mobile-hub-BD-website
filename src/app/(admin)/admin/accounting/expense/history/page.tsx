@@ -7,8 +7,10 @@ import { FilterBar } from "@/components/admin/FilterBar";
 import { FilterConfig } from "@/types/table";
 import { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
-import { apiGet } from "@/lib/api-client";
+import { apiGet, apiDelete } from "@/lib/api-client";
 import { getWalletIconComponent } from "@/components/admin/WalletIconHelper";
+import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface ExpenseHistoryRecord {
   id: string;
@@ -75,6 +77,19 @@ export default function ExpenseHistoryPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleDeleteExpense = async (id: string, refNo: string) => {
+    if (!confirm(`Are you sure you want to delete expense "${refNo}"? This will reverse the wallet deduction if paid.`)) {
+      return;
+    }
+    try {
+      await apiDelete(`/expenses/${id}`);
+      toast.success(`Expense "${refNo}" deleted successfully`);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete expense");
+    }
+  };
 
   const filterConfigs: FilterConfig[] = useMemo(() => [
     {
@@ -162,6 +177,24 @@ export default function ExpenseHistoryPage() {
         <span className="text-xs text-slate-500 max-w-xs truncate block">
           {row.original.description || row.original.referenceNo || "--"}
         </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "ACTION",
+      cell: ({ row }) => (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => handleDeleteExpense(row.original.id, row.original.referenceNo)}
+            className="h-7 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+            title="Delete Expense"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        </div>
       ),
     },
   ];

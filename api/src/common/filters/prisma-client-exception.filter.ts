@@ -53,6 +53,26 @@ export class PrismaClientExceptionFilter implements ExceptionFilter {
         });
       }
 
+      if (exception.code === 'P2003') {
+        const fieldName = (exception.meta?.field_name as string) || '';
+        const modelName = (exception.meta?.model_name as string) || '';
+        const info = fieldName || modelName ? ` (${fieldName || modelName})` : '';
+        this.logger.warn(`Foreign key constraint violation intercepted${info}: ${msg}`);
+        return response.status(HttpStatus.CONFLICT).json({
+          statusCode: HttpStatus.CONFLICT,
+          message: `Cannot delete or modify this record because other records depend on it${info}. Please remove or reassign dependent records first.`,
+          error: 'Conflict',
+        });
+      }
+
+      if (exception.code === 'P2014') {
+        return response.status(HttpStatus.CONFLICT).json({
+          statusCode: HttpStatus.CONFLICT,
+          message: 'Cannot delete this record because it is required by another related record.',
+          error: 'Conflict',
+        });
+      }
+
       if (exception.code === 'P2025') {
         return response.status(HttpStatus.NOT_FOUND).json({
           statusCode: HttpStatus.NOT_FOUND,

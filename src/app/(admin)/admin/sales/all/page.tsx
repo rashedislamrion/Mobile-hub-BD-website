@@ -6,7 +6,7 @@ import { FilterBar } from "@/components/admin/FilterBar";
 import { DataTable, StatusBadge, ActionDropdown } from "@/components/admin/DataTable";
 import { FilterConfig, StatusVariant, TableAction } from "@/types/table";
 import { ColumnDef } from "@tanstack/react-table";
-import { Eye, FileText, CreditCard } from "lucide-react";
+import { Eye, FileText, CreditCard, Trash2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { apiGet } from "@/lib/api-client";
+import { apiGet, apiDelete } from "@/lib/api-client";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { AddOrderPaymentModal } from "@/components/admin/orders/AddOrderPaymentModal";
@@ -97,6 +97,19 @@ export default function AllSalesPage() {
     loadData();
   }, [loadData]);
 
+  const handleDeleteSale = async (orderId: string, orderCode: string) => {
+    if (!confirm(`Are you sure you want to delete sale #${orderCode}? This will reverse inventory and remove all associated records.`)) {
+      return;
+    }
+    try {
+      await apiDelete(`/orders/${orderId}`);
+      toast.success(`Sale #${orderCode} deleted successfully`);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete sale");
+    }
+  };
+
   const filterConfigs: FilterConfig[] = useMemo(() => [
     {
       type: "select",
@@ -164,6 +177,13 @@ export default function AllSalesPage() {
         onClick: (r) => setSelectedOrderForPayment(r),
       });
     }
+
+    actions.push({
+      label: "Delete Sale",
+      icon: <Trash2 className="w-4 h-4 text-rose-600" />,
+      onClick: (r) => handleDeleteSale(r.id, r.orderCode),
+      variant: "destructive",
+    });
 
     return actions;
   };

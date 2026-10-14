@@ -1079,34 +1079,6 @@ export class PurchaseOrderService {
   async remove(id: string, user: JwtPayload) {
     const po = await this.findOne(id, user);
 
-    if (po.status !== PurchaseOrderStatus.DRAFT) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: `Cannot delete purchase order "${po.poNumber}" with status "${po.status}". Only DRAFT purchase orders can be deleted. Please cancel or return items instead.`,
-        canDeactivate: false,
-      });
-    }
-
-    if (po.payments && po.payments.length > 0) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: `Cannot delete purchase order "${po.poNumber}" because it has ${po.payments.length} linked supplier payment(s).`,
-        canDeactivate: false,
-      });
-    }
-
-    const hasReceivedItems = po.items.some((i: any) => i.quantityReceived > 0);
-    if (hasReceivedItems) {
-      throw new ConflictException({
-        statusCode: 409,
-        error: 'Conflict',
-        message: `Cannot delete purchase order "${po.poNumber}" because items have already been received into stock.`,
-        canDeactivate: false,
-      });
-    }
-
     // Check for phone units that have been sold or assigned — cannot delete
     const soldUnits = (po.phoneUnits || []).filter(
       (u: any) => u.status !== 'IN_STOCK',
@@ -1115,7 +1087,7 @@ export class PurchaseOrderService {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
-        message: `Cannot delete purchase order "${po.poNumber}" because ${soldUnits.length} phone unit(s) have been sold or assigned.`,
+        message: `Cannot delete purchase order "${po.poNumber}" because ${soldUnits.length} phone unit(s) have already been sold to customers.`,
         canDeactivate: false,
       });
     }
@@ -1125,7 +1097,39 @@ export class PurchaseOrderService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // Delete phone units linked to this PO (only IN_STOCK ones reach here)
+      // Inventory reversal: If items were received into stock, reverse the stock addition
+      for (const item of (po.items || [])) {
+        if (item.variantId && Number(item.quantityReceived || 0) > 0) {
+          const receivedQty = Number(item.quantityReceived);
+          const currentInv = await tx.branchInventory.findUnique({
+            where: {
+              branchId_productVariantId: {
+                branchId: po.branchId,
+                productVariantId: item.variantId,
+              },
+            },
+          });
+          if (currentInv) {
+            const decQty = Math.min(Number(currentInv.quantity), receivedQty);
+            if (decQty > 0) {
+              await tx.branchInventory.update({
+                where: {
+                  branchId_productVariantId: {
+                    branchId: po.branchId,
+                    productVariantId: item.variantId,
+                  },
+                },
+                data: {
+                  quantity: { decrement: decQty },
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // Delete payments and phone units linked to this PO
+      await tx.supplierPayment.deleteMany({ where: { purchaseOrderId: id } });
       await tx.phoneUnit.deleteMany({ where: { purchaseId: id } });
       await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
       return tx.purchaseOrder.delete({ where: { id } });

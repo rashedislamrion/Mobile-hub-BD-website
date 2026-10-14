@@ -10,9 +10,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { History, CreditCard, RefreshCw, Eye } from "lucide-react";
-import { apiGet } from "@/lib/api-client";
+import { History, CreditCard, RefreshCw, Eye, Trash2 } from "lucide-react";
+import { apiGet, apiDelete } from "@/lib/api-client";
 import { AddOrderPaymentModal } from "@/components/admin/orders/AddOrderPaymentModal";
+import { toast } from "sonner";
 import Link from "next/link";
 
 interface PosRecentSalesModalProps {
@@ -43,6 +44,19 @@ export function PosRecentSalesModal({
       setIsLoading(false);
     }
   }, [branchId]);
+
+  const handleDeleteOrder = async (orderId: string, orderCode: string) => {
+    if (!confirm(`Are you sure you want to delete sale #${orderCode}? This will reverse inventory and remove all associated records.`)) {
+      return;
+    }
+    try {
+      await apiDelete(`/orders/${orderId}`);
+      toast.success(`Sale #${orderCode} deleted successfully`);
+      fetchRecentSales();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete sale");
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -177,6 +191,16 @@ export function PosRecentSalesModal({
                               <Link href={`/admin/orders/${order.id}`} target="_blank">
                                 <Eye className="w-3.5 h-3.5" />
                               </Link>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteOrder(order.id, order.orderCode)}
+                              className="h-7 px-2 text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                              title="Delete Sale"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </td>
                         </tr>

@@ -8,7 +8,7 @@ import { FilterConfig, StatusVariant, TableAction } from "@/types/table";
 import { ColumnDef } from "@tanstack/react-table";
 import { Eye, CheckCircle, Edit, Trash2, CreditCard } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { apiGet, apiPatch } from "@/lib/api-client";
+import { apiGet, apiPatch, apiDelete } from "@/lib/api-client";
 import { toast } from "sonner";
 import { AddOrderPaymentModal } from "@/components/admin/orders/AddOrderPaymentModal";
 
@@ -102,6 +102,19 @@ export default function OrdersPage() {
     }
   };
 
+  const handleDeleteOrder = async (orderId: string, orderCode: string) => {
+    if (!confirm(`Are you sure you want to delete order #${orderCode}? This will reverse inventory and remove all associated records.`)) {
+      return;
+    }
+    try {
+      await apiDelete(`/orders/${orderId}`);
+      toast.success(`Order #${orderCode} deleted successfully`);
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete order");
+    }
+  };
+
   const filterConfigs: FilterConfig[] = useMemo(() => [
     {
       type: "select",
@@ -176,6 +189,12 @@ export default function OrdersPage() {
         label: "Mark Delivered",
         icon: <CheckCircle className="w-4 h-4 text-emerald-600" />,
         onClick: (r) => handleUpdateStatus(r.id, "DELIVERED"),
+      },
+      {
+        label: "Delete Order",
+        icon: <Trash2 className="w-4 h-4 text-rose-600" />,
+        onClick: (r) => handleDeleteOrder(r.id, r.orderCode),
+        variant: "destructive",
       }
     );
 
