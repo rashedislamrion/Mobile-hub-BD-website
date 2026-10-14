@@ -116,6 +116,7 @@ interface ShipmentLineItem {
   variantSku?: string;
   color?: string | null;
   quality?: string | null;
+  attributes?: Record<string, string>;
   quantityOrdered: number;
   unitCost: number; // Buying price
   sellingPrice?: number;
@@ -203,6 +204,8 @@ export default function CreatePurchaseOrderPage() {
   const [modalQualities, setModalQualities] = useState<string[]>([]);
   const [modalSelectedColor, setModalSelectedColor] = useState<string>("");
   const [modalSelectedQuality, setModalSelectedQuality] = useState<string>("");
+  const [modalAttributeGroups, setModalAttributeGroups] = useState<Array<{ name: string; values: string[] }>>([]);
+  const [modalSelectedAttributes, setModalSelectedAttributes] = useState<Record<string, string>>({});
   const [modalQuantity, setModalQuantity] = useState<number>(1);
   const [modalBuyingPrice, setModalBuyingPrice] = useState<number>(0);
   const [modalSellingPrice, setModalSellingPrice] = useState<string>("");
@@ -636,59 +639,158 @@ export default function CreatePurchaseOrderPage() {
   };
 
   // Variant Attribute Helpers
-  const getVariantColor = (v: ProductVariantItem): string => {
-    if (v.color) return v.color;
-    if (v.attributes && typeof v.attributes === "object") {
-      return (v.attributes as any).Color || (v.attributes as any).color || "";
-    }
-    return "";
+  const COLOR_HEX_MAP: Record<string, string> = {
+    black: "#000000",
+    white: "#FFFFFF",
+    silver: "#C0C0C0",
+    gray: "#808080",
+    grey: "#808080",
+    "space gray": "#4B4B4D",
+    "space grey": "#4B4B4D",
+    gold: "#FFD700",
+    rose: "#FF007F",
+    "rose gold": "#B76E79",
+    red: "#EF4444",
+    blue: "#3B82F6",
+    "deep purple": "#3E2A54",
+    purple: "#8B5CF6",
+    green: "#10B981",
+    midnight: "#191970",
+    starlight: "#F8F9FA",
+    "natural titanium": "#9E988D",
+    "black titanium": "#2F3133",
+    "white titanium": "#E5E5EA",
+    "blue titanium": "#35404E",
+    "desert titanium": "#C3B19B",
+    yellow: "#FBBF24",
+    orange: "#F97316",
   };
 
-  const getVariantQuality = (v: ProductVariantItem): string => {
-    if (v.quality) return v.quality;
-    if (v.attributes && typeof v.attributes === "object") {
-      return (v.attributes as any).Quality || (v.attributes as any).quality || "";
-    }
-    return "";
+  const getColorHex = (name: string): string | null => {
+    const clean = name.toLowerCase().trim();
+    return COLOR_HEX_MAP[clean] || null;
   };
 
-  const findMatchingVariant = (product: ProductItem, color: string, quality: string) => {
+  const getVariantAttributeMap = (v: ProductVariantItem): Record<string, string> => {
+    const attrs: Record<string, string> = {};
+    if (v.attributes && typeof v.attributes === "object") {
+      for (const [k, val] of Object.entries(v.attributes)) {
+        if (!val || k === "customName") continue;
+        const str = String(val).trim();
+        if (!str) continue;
+        let name = k.trim();
+        if (name.toLowerCase() === "color") name = "Color";
+        else if (name.toLowerCase() === "quality") name = "Quality";
+        else if (name.toLowerCase() === "box") name = "Box";
+        else if (name.toLowerCase() === "frame") name = "Frame";
+        else if (name.toLowerCase() === "storage") name = "Storage";
+        else if (name.toLowerCase() === "ram") name = "RAM";
+        else if (name.toLowerCase() === "region") name = "Region";
+        attrs[name] = str;
+      }
+    }
+    if (v.color && !attrs.Color) attrs.Color = v.color.trim();
+    if (v.quality && !attrs.Quality) attrs.Quality = v.quality.trim();
+    return attrs;
+  };
+
+  const deriveProductAttributeGroups = (variants: ProductVariantItem[]): Array<{ name: string; values: string[] }> => {
+    const map = new Map<string, Set<string>>();
+    for (const v of variants) {
+      const attrs = getVariantAttributeMap(v);
+      for (const [name, val] of Object.entries(attrs)) {
+        if (!map.has(name)) map.set(name, new Set());
+        map.get(name)!.add(val);
+      }
+    }
+    const priorityOrder = ["Color", "Quality", "Box", "Frame", "Storage", "RAM", "Region"];
+    return Array.from(map.entries())
+      .sort(([a], [b]) => {
+        const ia = priorityOrder.indexOf(a);
+        const ib = priorityOrder.indexOf(b);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return a.localeCompare(b);
+      })
+      .map(([name, set]) => ({ name, values: Array.from(set) }));
+  };
+
+  const findMatchingVariantMulti = (
+    product: ProductItem,
+    selectedAttrs: Record<string, string>
+  ): ProductVariantItem | null => {
     const variants = product.variants || [];
     if (variants.length === 0) return null;
 
-    if (color && quality) {
-      const exact = variants.find(
-        (v) => getVariantColor(v) === color && getVariantQuality(v) === quality
-      );
-      if (exact) return exact;
+    // 1. Try exact match
+    const exact = variants.find((v) => {
+      const vAttrs = getVariantAttributeMap(v);
+      for (const [groupName, selectedVal] of Object.entries(selectedAttrs)) {
+        if (!selectedVal) continue;
+        if (vAttrs[groupName] !== selectedVal) return false;
+      }
+      return true;
+    });
+    if (exact) return exact;
+
+    // 2. Best match by highest number of overlapping attributes
+    let best = variants[0];
+    let maxMatches = -1;
+    for (const v of variants) {
+      const vAttrs = getVariantAttributeMap(v);
+      let matches = 0;
+      for (const [groupName, selectedVal] of Object.entries(selectedAttrs)) {
+        if (!selectedVal) continue;
+        if (vAttrs[groupName] === selectedVal) matches++;
+      }
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        best = v;
+      }
     }
-    if (color) {
-      const colorMatch = variants.find((v) => getVariantColor(v) === color);
-      if (colorMatch) return colorMatch;
-    }
-    if (quality) {
-      const qualityMatch = variants.find((v) => getVariantQuality(v) === quality);
-      if (qualityMatch) return qualityMatch;
-    }
-    return variants[0];
+    return best;
+  };
+
+  const getVariantColor = (v: ProductVariantItem): string => {
+    return getVariantAttributeMap(v)["Color"] || "";
+  };
+
+  const getVariantQuality = (v: ProductVariantItem): string => {
+    return getVariantAttributeMap(v)["Quality"] || "";
+  };
+
+  const findMatchingVariant = (product: ProductItem, color: string, quality: string) => {
+    const attrs: Record<string, string> = {};
+    if (color) attrs["Color"] = color;
+    if (quality) attrs["Quality"] = quality;
+    return findMatchingVariantMulti(product, attrs);
   };
 
   // Open Product Modal
   const handleOpenProductModal = (product: ProductItem) => {
     setModalProduct(product);
     const variants = product.variants || [];
-    const colors = Array.from(new Set(variants.map(getVariantColor).filter(Boolean)));
-    const qualities = Array.from(new Set(variants.map(getVariantQuality).filter(Boolean)));
+    const groups = deriveProductAttributeGroups(variants);
+    setModalAttributeGroups(groups);
 
+    const initialAttrs: Record<string, string> = {};
+    if (variants.length > 0) {
+      const v0Attrs = getVariantAttributeMap(variants[0]);
+      groups.forEach((g) => {
+        initialAttrs[g.name] = v0Attrs[g.name] || g.values[0] || "";
+      });
+    }
+    setModalSelectedAttributes(initialAttrs);
+
+    const colors = groups.find((g) => g.name.toLowerCase() === "color")?.values || [];
+    const qualities = groups.find((g) => g.name.toLowerCase() === "quality")?.values || [];
     setModalColors(colors);
     setModalQualities(qualities);
+    setModalSelectedColor(initialAttrs["Color"] || "");
+    setModalSelectedQuality(initialAttrs["Quality"] || "");
 
-    const initialColor = colors[0] || "";
-    const initialQuality = qualities[0] || "";
-    setModalSelectedColor(initialColor);
-    setModalSelectedQuality(initialQuality);
-
-    const matched = findMatchingVariant(product, initialColor, initialQuality);
+    const matched = findMatchingVariantMulti(product, initialAttrs);
     const variantId = matched?.id || variants[0]?.id || "";
     setModalVariantId(variantId);
     setModalQuantity(1);
@@ -753,15 +855,25 @@ export default function CreatePurchaseOrderPage() {
     setIsProductModalOpen(true);
   };
 
-  const handleSelectColorPill = (color: string) => {
-    setModalSelectedColor(color);
+  const handleSelectAttributePill = (groupName: string, val: string) => {
     if (!modalProduct) return;
-    const matched = findMatchingVariant(modalProduct, color, modalSelectedQuality);
+    const nextAttrs = { ...modalSelectedAttributes, [groupName]: val };
+    setModalSelectedAttributes(nextAttrs);
+    if (groupName === "Color") setModalSelectedColor(val);
+    if (groupName === "Quality") setModalSelectedQuality(val);
+
+    const matched = findMatchingVariantMulti(modalProduct, nextAttrs);
     if (matched) {
       setModalVariantId(matched.id);
-      if (matched.buyingPrice !== undefined && matched.buyingPrice !== null) {
-        setModalBuyingPrice(Number(matched.buyingPrice));
-      }
+      const cost = Number(
+        matched.buyingPrice ??
+        modalProduct.buyingPrice ??
+        modalProduct.costPrice ??
+        matched.price ??
+        modalProduct.regularPrice ??
+        0
+      );
+      setModalBuyingPrice(cost);
       if (matched.price) setModalSellingPrice(String(matched.price));
       if (matched.wholesalePrice) setModalWholesalePrice(String(matched.wholesalePrice));
       if (matched.offerPrice || matched.discountedPrice) {
@@ -770,21 +882,12 @@ export default function CreatePurchaseOrderPage() {
     }
   };
 
+  const handleSelectColorPill = (color: string) => {
+    handleSelectAttributePill("Color", color);
+  };
+
   const handleSelectQualityPill = (quality: string) => {
-    setModalSelectedQuality(quality);
-    if (!modalProduct) return;
-    const matched = findMatchingVariant(modalProduct, modalSelectedColor, quality);
-    if (matched) {
-      setModalVariantId(matched.id);
-      if (matched.buyingPrice !== undefined && matched.buyingPrice !== null) {
-        setModalBuyingPrice(Number(matched.buyingPrice));
-      }
-      if (matched.price) setModalSellingPrice(String(matched.price));
-      if (matched.wholesalePrice) setModalWholesalePrice(String(matched.wholesalePrice));
-      if (matched.offerPrice || matched.discountedPrice) {
-        setModalOfferPrice(String(matched.offerPrice || matched.discountedPrice));
-      }
-    }
+    handleSelectAttributePill("Quality", quality);
   };
 
   // Add Item to Line Items
@@ -847,8 +950,8 @@ export default function CreatePurchaseOrderPage() {
     const effectiveQty = isPhone ? modalPhoneUnits.length : qty;
     const lineTotal = effectiveQty * cost;
 
-    const chosenColor = modalSelectedColor || variant?.color || (variant?.attributes as any)?.Color || null;
-    const chosenQuality = modalSelectedQuality || variant?.quality || (variant?.attributes as any)?.Quality || null;
+    const chosenColor = modalSelectedAttributes["Color"] || modalSelectedColor || variant?.color || null;
+    const chosenQuality = modalSelectedAttributes["Quality"] || modalSelectedQuality || variant?.quality || null;
 
     const newItem: ShipmentLineItem = {
       key,
@@ -859,6 +962,7 @@ export default function CreatePurchaseOrderPage() {
       variantSku: variant?.sku,
       color: chosenColor,
       quality: chosenQuality,
+      attributes: { ...modalSelectedAttributes },
       quantityOrdered: effectiveQty,
       unitCost: cost,
       sellingPrice: modalSellingPrice ? Number(modalSellingPrice) : undefined,
@@ -1553,7 +1657,16 @@ export default function CreatePurchaseOrderPage() {
                         <div>
                           <p className="font-semibold text-slate-900">{item.productName}</p>
                           <p className="text-[11px] text-slate-500">
-                            {item.variantSku || "Base"} {item.color ? `• ${item.color}` : ""} {item.quality ? `• ${item.quality}` : ""}
+                            <span className="font-mono font-semibold text-slate-700">{item.variantSku || "Base"}</span>
+                            {item.attributes && Object.keys(item.attributes).length > 0 ? (
+                              <span className="text-slate-600">
+                                {Object.entries(item.attributes).map(([k, v]) => ` • ${k}: ${v}`).join("")}
+                              </span>
+                            ) : (
+                              <span>
+                                {item.color ? ` • ${item.color}` : ""} {item.quality ? ` • ${item.quality}` : ""}
+                              </span>
+                            )}
                           </p>
                           {item.isPhone && item.phoneUnits && item.phoneUnits.length > 0 && (
                             <div className="mt-1 flex flex-wrap gap-1">
@@ -2045,92 +2158,108 @@ export default function CreatePurchaseOrderPage() {
                 </div>
               </div>
 
-              {/* Color Pill Buttons */}
-              {modalColors.length > 0 && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Color <span className="text-slate-400 font-normal">({modalColors.length} options)</span>
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {modalColors.map((color) => {
-                      const isSelected = modalSelectedColor === color;
-                      return (
-                        <button
-                          key={color}
-                          type="button"
-                          onClick={() => handleSelectColorPill(color)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                            isSelected
-                              ? "bg-emerald-50 text-emerald-700 border-2 border-emerald-500 font-semibold shadow-sm ring-1 ring-emerald-500/20"
-                              : "bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                        >
-                          {color}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {/* Dynamic Attribute Groups (Color, Quality, Box, Frame, Storage, etc.) */}
+              {modalAttributeGroups.length > 0 ? (
+                <div className="space-y-4">
+                  {modalAttributeGroups.map((group) => {
+                    const isColorGroup =
+                      group.name.toLowerCase() === "color" || group.name.toLowerCase() === "colour";
+                    const currentVal = modalSelectedAttributes[group.name] || "";
 
-              {/* Quality Pill Buttons */}
-              {modalQualities.length > 0 && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Quality <span className="text-slate-400 font-normal">({modalQualities.length} options)</span>
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {modalQualities.map((quality) => {
-                      const isSelected = modalSelectedQuality === quality;
-                      return (
-                        <button
-                          key={quality}
-                          type="button"
-                          onClick={() => handleSelectQualityPill(quality)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                            isSelected
-                              ? "bg-emerald-50 text-emerald-700 border-2 border-emerald-500 font-semibold shadow-sm ring-1 ring-emerald-500/20"
-                              : "bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                        >
-                          {quality}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                    return (
+                      <div key={group.name} className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-slate-700">
+                          {group.name}{" "}
+                          <span className="text-slate-400 font-normal">
+                            ({group.values.length} options)
+                          </span>
+                          {currentVal && (
+                            <span className="ml-1 text-emerald-700 font-bold">
+                              : {currentVal}
+                            </span>
+                          )}
+                        </label>
 
-              {/* Fallback Variant Selector if no explicit color/quality pills */}
-              {modalColors.length === 0 && modalQualities.length === 0 && modalProduct.variants && modalProduct.variants.length > 1 && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Select Variant</label>
-                  <select
-                    value={modalVariantId}
-                    onChange={(e) => {
-                      const vid = e.target.value;
-                      setModalVariantId(vid);
-                      const v = modalProduct.variants.find((item) => item.id === vid);
-                      if (v) {
-                        if (v.buyingPrice !== undefined && v.buyingPrice !== null) {
-                          setModalBuyingPrice(Number(v.buyingPrice));
-                        }
-                        setModalSellingPrice(String(v.price || modalProduct.regularPrice || ""));
-                        setModalWholesalePrice(v.wholesalePrice ? String(v.wholesalePrice) : "");
-                        if (v.offerPrice || v.discountedPrice) {
-                          setModalOfferPrice(String(v.offerPrice || v.discountedPrice));
-                        }
-                      }
-                    }}
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800"
-                  >
-                    {modalProduct.variants.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.sku} {v.color ? `• ${v.color}` : ""} {v.quality ? `• ${v.quality}` : ""} (Current Stock: {v.stock})
-                      </option>
-                    ))}
-                  </select>
+                        <div className="flex flex-wrap gap-1.5">
+                          {group.values.map((val) => {
+                            const isSelected = currentVal === val;
+
+                            if (isColorGroup) {
+                              const hex = getColorHex(val);
+                              return (
+                                <button
+                                  key={val}
+                                  type="button"
+                                  onClick={() => handleSelectAttributePill(group.name, val)}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                    isSelected
+                                      ? "bg-emerald-50 text-emerald-800 border-2 border-emerald-500 font-bold shadow-xs ring-1 ring-emerald-500/20"
+                                      : "bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {hex && (
+                                    <span
+                                      className="w-3 h-3 rounded-full border border-black/15 shrink-0"
+                                      style={{ backgroundColor: hex }}
+                                    />
+                                  )}
+                                  <span>{val}</span>
+                                </button>
+                              );
+                            }
+
+                            return (
+                              <button
+                                key={val}
+                                type="button"
+                                onClick={() => handleSelectAttributePill(group.name, val)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                  isSelected
+                                    ? "bg-emerald-600 text-white font-bold shadow-xs border-2 border-emerald-600"
+                                    : "bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                }`}
+                              >
+                                {val}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+              ) : (
+                /* Fallback Variant Selector if no structured attribute groups */
+                modalProduct.variants && modalProduct.variants.length > 1 && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Select Variant</label>
+                    <select
+                      value={modalVariantId}
+                      onChange={(e) => {
+                        const vid = e.target.value;
+                        setModalVariantId(vid);
+                        const v = modalProduct.variants.find((item) => item.id === vid);
+                        if (v) {
+                          if (v.buyingPrice !== undefined && v.buyingPrice !== null) {
+                            setModalBuyingPrice(Number(v.buyingPrice));
+                          }
+                          setModalSellingPrice(String(v.price || modalProduct.regularPrice || ""));
+                          setModalWholesalePrice(v.wholesalePrice ? String(v.wholesalePrice) : "");
+                          if (v.offerPrice || v.discountedPrice) {
+                            setModalOfferPrice(String(v.offerPrice || v.discountedPrice));
+                          }
+                        }
+                      }}
+                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800"
+                    >
+                      {modalProduct.variants.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.sku} {v.color ? `• ${v.color}` : ""} {v.quality ? `• ${v.quality}` : ""} (Current Stock: {v.stock})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )
               )}
 
               {/* PHONE INTAKE SECTION (Serialized Unit-by-Unit with Real-Time IMEI Check) */}

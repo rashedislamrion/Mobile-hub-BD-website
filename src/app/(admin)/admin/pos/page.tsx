@@ -103,6 +103,7 @@ interface CartItem {
   image?: string;
   color?: string | null;
   quality?: string | null;
+  attributes?: Record<string, string> | null;
   sku?: string;
   stock: number;
   unitPrice: number;
@@ -322,6 +323,7 @@ export default function PosTerminalPage() {
     image: string;
     color: string | null;
     quality: string | null;
+    attributes?: Record<string, string>;
     sku: string;
     stock: number;
     unitPrice: number;
@@ -347,6 +349,7 @@ export default function PosTerminalPage() {
           image: item.image,
           color: item.color,
           quality: item.quality,
+          attributes: item.attributes,
           sku: item.sku,
           stock: item.stock,
           unitPrice: item.unitPrice,
@@ -379,6 +382,7 @@ export default function PosTerminalPage() {
         image: item.image,
         color: item.color,
         quality: item.quality,
+        attributes: item.attributes,
         sku: item.sku,
         stock: 1,
         unitPrice: item.unitPrice,
@@ -1108,11 +1112,15 @@ export default function PosTerminalPage() {
                           </p>
                         </div>
                       ) : (
-                        (item.color || item.quality) && (
+                        (item.attributes && Object.keys(item.attributes).length > 0) ? (
+                          <p className="text-[10px] text-slate-500 font-medium">
+                            {Object.entries(item.attributes).map(([k, v]) => `${k}: ${v}`).join(" • ")}
+                          </p>
+                        ) : (item.color || item.quality) ? (
                           <p className="text-[10px] text-slate-500">
                             {item.color ? `Color: ${item.color}` : ""} {item.quality ? `(${item.quality})` : ""}
                           </p>
-                        )
+                        ) : null
                       )}
                       <div className="text-[11px] text-slate-600 font-medium mt-0.5">
                         ৳{item.unitPrice.toLocaleString()}{" "}

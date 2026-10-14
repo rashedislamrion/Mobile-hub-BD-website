@@ -70,6 +70,7 @@ export interface PosProductModalProps {
     image: string;
     color: string | null;
     quality: string | null;
+    attributes?: Record<string, string>;
     sku: string;
     stock: number;
     unitPrice: number;
@@ -95,6 +96,7 @@ export interface PosProductModalProps {
     image: string;
     color: string | null;
     quality: string | null;
+    attributes?: Record<string, string>;
     sku: string;
     stock: number;
     unitPrice: number;
@@ -116,6 +118,7 @@ export function PosProductModal({
   const [activeVariantId, setActiveVariantId] = useState<string>("");
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [selectedQuality, setSelectedQuality] = useState<string | null>(null);
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
 
   // Quantity and price override
   const [quantity, setQuantity] = useState<number>(1);
@@ -154,39 +157,92 @@ export function PosProductModal({
     setWarrantyEndDate(d.toISOString().split("T")[0]);
   };
 
-  // Grouping: Distinct color options
-  const colorOptions = useMemo(() => {
+  const COLOR_HEX_MAP: Record<string, string> = {
+    black: "#000000",
+    white: "#FFFFFF",
+    silver: "#C0C0C0",
+    gray: "#808080",
+    grey: "#808080",
+    "space gray": "#4B4B4D",
+    "space grey": "#4B4B4D",
+    gold: "#FFD700",
+    rose: "#FF007F",
+    "rose gold": "#B76E79",
+    red: "#EF4444",
+    blue: "#3B82F6",
+    "deep purple": "#3E2A54",
+    purple: "#8B5CF6",
+    green: "#10B981",
+    midnight: "#191970",
+    starlight: "#F8F9FA",
+    "natural titanium": "#9E988D",
+    "black titanium": "#2F3133",
+    "white titanium": "#E5E5EA",
+    "blue titanium": "#35404E",
+    "desert titanium": "#C3B19B",
+    yellow: "#FBBF24",
+    orange: "#F97316",
+  };
+
+  const getColorHex = (name: string): string | null => {
+    const clean = name.toLowerCase().trim();
+    return COLOR_HEX_MAP[clean] || null;
+  };
+
+  const getVariantAttrs = (v: any): Record<string, string> => {
+    const attrs: Record<string, string> = {};
+    if (v.attributes && typeof v.attributes === "object") {
+      for (const [k, val] of Object.entries(v.attributes)) {
+        if (!val || k === "customName") continue;
+        const str = String(val).trim();
+        if (!str) continue;
+        let name = k.trim();
+        if (name.toLowerCase() === "color") name = "Color";
+        else if (name.toLowerCase() === "quality") name = "Quality";
+        else if (name.toLowerCase() === "box") name = "Box";
+        else if (name.toLowerCase() === "frame") name = "Frame";
+        else if (name.toLowerCase() === "storage") name = "Storage";
+        else if (name.toLowerCase() === "ram") name = "RAM";
+        else if (name.toLowerCase() === "region") name = "Region";
+        attrs[name] = str;
+      }
+    }
+    if (v.color && !attrs.Color) attrs.Color = v.color.trim();
+    if (v.quality && !attrs.Quality) attrs.Quality = v.quality.trim();
+    return attrs;
+  };
+
+  // Grouping: All dynamic attribute groups
+  const attributeGroups = useMemo(() => {
     if (!product?.allVariants || product.allVariants.length === 0) return [];
-    const set = new Set<string>();
+    const map = new Map<string, Set<string>>();
     product.allVariants.forEach((v) => {
-      const val =
-        v.color ||
-        (v.attributes as any)?.Color ||
-        (v.attributes as any)?.color;
-      if (val && typeof val === "string" && val.trim()) {
-        set.add(val.trim());
+      const vAttrs = getVariantAttrs(v);
+      for (const [name, val] of Object.entries(vAttrs)) {
+        if (!map.has(name)) map.set(name, new Set());
+        map.get(name)!.add(val);
       }
     });
-    return Array.from(set);
+    const priorityOrder = ["Color", "Quality", "Box", "Frame", "Storage", "RAM", "Region"];
+    return Array.from(map.entries())
+      .sort(([a], [b]) => {
+        const ia = priorityOrder.indexOf(a);
+        const ib = priorityOrder.indexOf(b);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return a.localeCompare(b);
+      })
+      .map(([name, set]) => ({ name, values: Array.from(set) }));
   }, [product]);
 
-  // Grouping: Distinct quality options
+  const colorOptions = useMemo(() => {
+    return attributeGroups.find((g) => g.name.toLowerCase() === "color")?.values || [];
+  }, [attributeGroups]);
+
   const qualityOptions = useMemo(() => {
-    if (!product?.allVariants || product.allVariants.length === 0) return [];
-    const set = new Set<string>();
-    product.allVariants.forEach((v) => {
-      const val =
-        v.quality ||
-        (v.attributes as any)?.Quality ||
-        (v.attributes as any)?.quality ||
-        (v.attributes as any)?.Grade ||
-        (v.attributes as any)?.grade;
-      if (val && typeof val === "string" && val.trim()) {
-        set.add(val.trim());
-      }
-    });
-    return Array.from(set);
-  }, [product]);
+    return attributeGroups.find((g) => g.name.toLowerCase() === "quality")?.values || [];
+  }, [attributeGroups]);
 
   // Fetch available phone units for a specific variant
   const fetchPhoneUnitsForVariant = async (variantId: string) => {
@@ -219,20 +275,22 @@ export function PosProductModal({
     setQuantity(1);
     setPriceOverride(product.price);
 
-    const initialColor =
-      product.color ||
-      (product.attributes as any)?.Color ||
-      (product.attributes as any)?.color ||
-      (colorOptions.length > 0 ? colorOptions[0] : null);
+    const initialAttrs: Record<string, string> = {};
+    const firstVar = product.allVariants?.find((v) => v.id === product.id) || product.allVariants?.[0];
+    if (firstVar) {
+      const vAttrs = getVariantAttrs(firstVar);
+      attributeGroups.forEach((g) => {
+        initialAttrs[g.name] = vAttrs[g.name] || g.values[0] || "";
+      });
+    } else {
+      attributeGroups.forEach((g) => {
+        initialAttrs[g.name] = g.values[0] || "";
+      });
+    }
 
-    const initialQuality =
-      product.quality ||
-      (product.attributes as any)?.Quality ||
-      (product.attributes as any)?.quality ||
-      (qualityOptions.length > 0 ? qualityOptions[0] : null);
-
-    setSelectedColor(initialColor);
-    setSelectedQuality(initialQuality);
+    setSelectedAttributes(initialAttrs);
+    setSelectedColor(initialAttrs["Color"] || null);
+    setSelectedQuality(initialAttrs["Quality"] || null);
 
     if (product.isPhone) {
       fetchPhoneUnitsForVariant(product.id);
@@ -240,7 +298,7 @@ export function PosProductModal({
       setPhoneUnits([]);
       setSelectedPhoneUnitId("");
     }
-  }, [product]);
+  }, [product, attributeGroups]);
 
   // Resolve currently active variant
   const activeVariant = useMemo(() => {
@@ -262,120 +320,73 @@ export function PosProductModal({
     };
   }, [product, activeVariantId]);
 
-  // Color selection -> Resolve to matching variant
+  // Generic attribute selection -> resolve to matching variant
+  const handleSelectAttribute = (groupName: string, value: string) => {
+    const nextAttrs = { ...selectedAttributes, [groupName]: value };
+    setSelectedAttributes(nextAttrs);
+    if (groupName === "Color") setSelectedColor(value);
+    if (groupName === "Quality") setSelectedQuality(value);
+
+    if (!product?.allVariants || product.allVariants.length === 0) return;
+
+    // 1. Try exact match across all selected attributes
+    let match = product.allVariants.find((v) => {
+      const vAttrs = getVariantAttrs(v);
+      for (const [g, val] of Object.entries(nextAttrs)) {
+        if (!val) continue;
+        if (vAttrs[g] !== val) return false;
+      }
+      return true;
+    });
+
+    // 2. Best partial match if exact combination doesn't exist
+    if (!match) {
+      let maxMatches = -1;
+      for (const v of product.allVariants) {
+        const vAttrs = getVariantAttrs(v);
+        let matches = 0;
+        for (const [g, val] of Object.entries(nextAttrs)) {
+          if (!val) continue;
+          if (vAttrs[g] === val) matches++;
+        }
+        if (matches > maxMatches) {
+          maxMatches = matches;
+          match = v;
+        }
+      }
+    }
+
+    if (match) {
+      setActiveVariantId(match.id);
+      setPriceOverride(match.price);
+      if (product.isPhone) {
+        fetchPhoneUnitsForVariant(match.id);
+      }
+    }
+  };
+
   const handleSelectColor = (colorName: string) => {
-    setSelectedColor(colorName);
-    if (!product?.allVariants || product.allVariants.length === 0) return;
-
-    // 1. Try finding exact variant with currently selected quality
-    let match = selectedQuality
-      ? product.allVariants.find(
-          (v) =>
-            (v.color?.trim() === colorName || (v.attributes as any)?.Color?.trim() === colorName) &&
-            (v.quality?.trim() === selectedQuality || (v.attributes as any)?.Quality?.trim() === selectedQuality)
-        )
-      : undefined;
-
-    // 2. Fallback: first variant with this color
-    if (!match) {
-      match = product.allVariants.find(
-        (v) => v.color?.trim() === colorName || (v.attributes as any)?.Color?.trim() === colorName
-      );
-      if (match) {
-        const fallbackQuality =
-          match.quality ||
-          (match.attributes as any)?.Quality ||
-          (match.attributes as any)?.quality ||
-          null;
-        if (fallbackQuality) setSelectedQuality(fallbackQuality.trim());
-      }
-    }
-
-    if (match) {
-      setActiveVariantId(match.id);
-      setPriceOverride(match.price);
-      if (product.isPhone) {
-        fetchPhoneUnitsForVariant(match.id);
-      }
-    }
+    handleSelectAttribute("Color", colorName);
   };
 
-  // Quality selection -> Resolve to matching variant
   const handleSelectQuality = (qualityName: string) => {
-    setSelectedQuality(qualityName);
-    if (!product?.allVariants || product.allVariants.length === 0) return;
-
-    // 1. Try finding exact variant with currently selected color
-    let match = selectedColor
-      ? product.allVariants.find(
-          (v) =>
-            (v.quality?.trim() === qualityName || (v.attributes as any)?.Quality?.trim() === qualityName) &&
-            (v.color?.trim() === selectedColor || (v.attributes as any)?.Color?.trim() === selectedColor)
-        )
-      : undefined;
-
-    // 2. Fallback: first variant with this quality
-    if (!match) {
-      match = product.allVariants.find(
-        (v) => v.quality?.trim() === qualityName || (v.attributes as any)?.Quality?.trim() === qualityName
-      );
-      if (match) {
-        const fallbackColor =
-          match.color ||
-          (match.attributes as any)?.Color ||
-          (match.attributes as any)?.color ||
-          null;
-        if (fallbackColor) setSelectedColor(fallbackColor.trim());
-      }
-    }
-
-    if (match) {
-      setActiveVariantId(match.id);
-      setPriceOverride(match.price);
-      if (product.isPhone) {
-        fetchPhoneUnitsForVariant(match.id);
-      }
-    }
+    handleSelectAttribute("Quality", qualityName);
   };
 
-  // Stock check for Color button
-  const checkColorDisabled = (colorName: string) => {
+  // Stock check for any attribute option
+  const isOptionDisabled = (groupName: string, value: string) => {
     if (!product?.allVariants || product.allVariants.length === 0) return false;
-    if (selectedQuality && qualityOptions.length > 0) {
-      const specificVariant = product.allVariants.find(
-        (v) =>
-          (v.color?.trim() === colorName || (v.attributes as any)?.Color?.trim() === colorName) &&
-          (v.quality?.trim() === selectedQuality || (v.attributes as any)?.Quality?.trim() === selectedQuality)
-      );
-      if (specificVariant) {
-        return specificVariant.stock <= 0;
+    const matchingVariants = product.allVariants.filter((v) => {
+      const vAttrs = getVariantAttrs(v);
+      if (vAttrs[groupName] !== value) return false;
+      for (const [otherG, otherV] of Object.entries(selectedAttributes)) {
+        if (otherG === groupName || !otherV) continue;
+        if (vAttrs[otherG] && vAttrs[otherG] !== otherV) return false;
       }
-    }
-    const colorVariants = product.allVariants.filter(
-      (v) => v.color?.trim() === colorName || (v.attributes as any)?.Color?.trim() === colorName
-    );
-    if (colorVariants.length === 0) return true;
-    return colorVariants.every((v) => v.stock <= 0);
-  };
-
-  // Stock check for Quality button
-  const checkQualityDisabled = (qualityName: string) => {
-    if (!product?.allVariants || product.allVariants.length === 0) return false;
-    if (selectedColor && colorOptions.length > 0) {
-      const specificVariant = product.allVariants.find(
-        (v) =>
-          (v.color?.trim() === selectedColor || (v.attributes as any)?.Color?.trim() === selectedColor) &&
-          (v.quality?.trim() === qualityName || (v.attributes as any)?.Quality?.trim() === qualityName)
-      );
-      if (specificVariant) {
-        return specificVariant.stock <= 0;
-      }
-    }
-    const qualityVariants = product.allVariants.filter(
-      (v) => v.quality?.trim() === qualityName || (v.attributes as any)?.Quality?.trim() === qualityName
-    );
-    if (qualityVariants.length === 0) return true;
-    return qualityVariants.every((v) => v.stock <= 0);
+      return true;
+    });
+    if (matchingVariants.length === 0) return true;
+    return matchingVariants.every((v) => v.stock <= 0);
   };
 
   // Handle Add to Cart
@@ -422,6 +433,7 @@ export function PosProductModal({
         image: product.productImage,
         color: activeVariant.color,
         quality: activeVariant.quality,
+        attributes: { ...selectedAttributes },
         sku: activeVariant.sku,
         stock: 1,
         unitPrice,
@@ -465,6 +477,7 @@ export function PosProductModal({
       image: product.productImage,
       color: activeVariant.color,
       quality: activeVariant.quality,
+      attributes: { ...selectedAttributes },
       sku: activeVariant.sku,
       stock: activeVariant.stock,
       unitPrice,
@@ -533,145 +546,90 @@ export function PosProductModal({
         {/* MODAL BODY: Separate Color, Quality sections, IMEI, and Quantity controls */}
         {/* ========================================================================= */}
         <div className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1">
-          {/* COLOR SECTION (Rendered if color options exist) */}
-          {colorOptions.length > 0 && (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Color
-                  </label>
-                  {selectedColor && (
-                    <span className="text-xs font-semibold text-slate-600">
-                      Active: <span className="font-bold text-emerald-700">{selectedColor}</span>
-                    </span>
-                  )}
-                </div>
+          {/* DYNAMIC ATTRIBUTE GROUPS (Color, Quality, Box, Frame, Storage, etc.) */}
+          {attributeGroups.map((group, groupIdx) => {
+            const isColorGroup = group.name.toLowerCase() === "color";
+            const selectedVal = selectedAttributes[group.name];
 
-                {/* Inline Stock Display for Selected Color/Variant (Fix Pass 23) */}
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      (activeVariant?.stock ?? product.stock) > 0
-                        ? "bg-emerald-500 animate-pulse"
-                        : "bg-rose-500"
-                    }`}
-                  />
-                  <span
-                    className={`text-xs font-bold ${
-                      (activeVariant?.stock ?? product.stock) > 0
-                        ? "text-emerald-700"
-                        : "text-rose-600"
-                    }`}
-                  >
-                    {(activeVariant?.stock ?? product.stock) > 0
-                      ? `${activeVariant?.stock ?? product.stock} in stock`
-                      : "Out of stock"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2.5">
-                {colorOptions.map((c) => {
-                  const isSelected = selectedColor === c;
-                  const isOutOfStock = checkColorDisabled(c);
-                  return (
-                    <button
-                      type="button"
-                      key={c}
-                      disabled={isOutOfStock}
-                      onClick={() => handleSelectColor(c)}
-                      className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all border flex items-center gap-2 ${
-                        isSelected
-                          ? "bg-emerald-50/90 border-emerald-600 text-emerald-950 font-bold ring-2 ring-emerald-500/20 shadow-xs"
-                          : isOutOfStock
-                          ? "bg-slate-50 border-slate-200 text-slate-400 opacity-50 cursor-not-allowed line-through"
-                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300"
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />}
-                      <span>{c}</span>
-                      {isOutOfStock && (
-                        <span className="text-[10px] text-rose-500 font-normal no-underline">
-                          (0 in stock)
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* QUALITY SECTION (Rendered if quality options exist) */}
-          {qualityOptions.length > 0 && (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Quality
-                  </label>
-                  {selectedQuality && (
-                    <span className="text-xs font-semibold text-slate-600">
-                      Active: <span className="font-bold text-emerald-700">{selectedQuality}</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* If product has no color options, show stock in Quality section header */}
-                {colorOptions.length === 0 && (
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        (activeVariant?.stock ?? product.stock) > 0
-                          ? "bg-emerald-500 animate-pulse"
-                          : "bg-rose-500"
-                      }`}
-                    />
-                    <span
-                      className={`text-xs font-bold ${
-                        (activeVariant?.stock ?? product.stock) > 0
-                          ? "text-emerald-700"
-                          : "text-rose-600"
-                      }`}
-                    >
-                      {(activeVariant?.stock ?? product.stock) > 0
-                        ? `${activeVariant?.stock ?? product.stock} in stock`
-                        : "Out of stock"}
-                    </span>
+            return (
+              <div key={group.name} className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      {group.name}
+                    </label>
+                    {selectedVal && (
+                      <span className="text-xs font-semibold text-slate-600">
+                        Active: <span className="font-bold text-emerald-700">{selectedVal}</span>
+                      </span>
+                    )}
                   </div>
-                )}
+
+                  {/* Stock Display for the first group or when selected */}
+                  {groupIdx === 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          (activeVariant?.stock ?? product.stock) > 0
+                            ? "bg-emerald-500 animate-pulse"
+                            : "bg-rose-500"
+                        }`}
+                      />
+                      <span
+                        className={`text-xs font-bold ${
+                          (activeVariant?.stock ?? product.stock) > 0
+                            ? "text-emerald-700"
+                            : "text-rose-600"
+                        }`}
+                      >
+                        {(activeVariant?.stock ?? product.stock) > 0
+                          ? `${activeVariant?.stock ?? product.stock} in stock`
+                          : "Out of stock"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2.5">
+                  {group.values.map((val) => {
+                    const isSelected = selectedVal === val;
+                    const isOutOfStock = isOptionDisabled(group.name, val);
+                    const hexColor = isColorGroup ? getColorHex(val) : null;
+
+                    return (
+                      <button
+                        type="button"
+                        key={val}
+                        disabled={isOutOfStock}
+                        onClick={() => handleSelectAttribute(group.name, val)}
+                        className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all border flex items-center gap-2 ${
+                          isSelected
+                            ? "bg-emerald-50/90 border-emerald-600 text-emerald-950 font-bold ring-2 ring-emerald-500/20 shadow-xs"
+                            : isOutOfStock
+                            ? "bg-slate-50 border-slate-200 text-slate-400 opacity-50 cursor-not-allowed line-through"
+                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+                        }`}
+                      >
+                        {isColorGroup && hexColor && (
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
+                            style={{ backgroundColor: hexColor }}
+                          />
+                        )}
+                        {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />}
+                        <span>{val}</span>
+                        {isOutOfStock && (
+                          <span className="text-[10px] text-rose-500 font-normal no-underline">
+                            (0 in stock)
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2.5">
-                {qualityOptions.map((q) => {
-                  const isSelected = selectedQuality === q;
-                  const isOutOfStock = checkQualityDisabled(q);
-                  return (
-                    <button
-                      type="button"
-                      key={q}
-                      disabled={isOutOfStock}
-                      onClick={() => handleSelectQuality(q)}
-                      className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all border flex items-center gap-2 ${
-                        isSelected
-                          ? "bg-emerald-50/90 border-emerald-600 text-emerald-950 font-bold ring-2 ring-emerald-500/20 shadow-xs"
-                          : isOutOfStock
-                          ? "bg-slate-50 border-slate-200 text-slate-400 opacity-50 cursor-not-allowed line-through"
-                          : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300"
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />}
-                      <span>{q}</span>
-                      {isOutOfStock && (
-                        <span className="text-[10px] text-rose-500 font-normal no-underline">
-                          (0 in stock)
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+            );
+          })}
 
           {/* ========================================================================= */}
           {/* FLOW 1: PHONE DEVICE PHYSICAL IMEI SELECTION (Fix Pass 20)                */}

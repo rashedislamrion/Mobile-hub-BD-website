@@ -89,9 +89,14 @@ export default function CartPage() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-slate-900 text-sm sm:text-base">{item.name}</h3>
-                    {(item.color || item.quality) && (
+                    {((item.attributes && Object.keys(item.attributes).length > 0) || item.color || item.quality) && (
                       <p className="text-xs text-slate-500 mt-1">
-                        {[item.color, item.quality].filter(Boolean).join(" • ")}
+                        {item.attributes && Object.keys(item.attributes).length > 0
+                          ? Object.entries(item.attributes)
+                              .filter(([k, v]) => Boolean(v) && k !== 'customName')
+                              .map(([k, v]) => `${k}: ${v}`)
+                              .join(" • ")
+                          : [item.color, item.quality].filter(Boolean).join(" • ")}
                       </p>
                     )}
                     <p className="text-sm font-bold text-emerald-600 mt-1 sm:hidden">

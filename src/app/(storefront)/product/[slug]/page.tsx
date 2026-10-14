@@ -150,7 +150,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       )}
-      <ProductDetailClientView params={params} />
+      <ProductDetailClientView params={params} initialProduct={product} />
     </>
   );
 }

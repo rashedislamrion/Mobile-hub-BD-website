@@ -503,6 +503,16 @@ export default function CheckoutPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="text-xs font-semibold text-slate-800 truncate">{item.name}</h4>
+                    {((item.attributes && Object.keys(item.attributes).length > 0) || item.color || item.quality) && (
+                      <p className="text-[10px] text-slate-500 truncate">
+                        {item.attributes && Object.keys(item.attributes).length > 0
+                          ? Object.entries(item.attributes)
+                              .filter(([k, v]) => Boolean(v) && k !== 'customName')
+                              .map(([k, v]) => `${k}: ${v}`)
+                              .join(" • ")
+                          : [item.color, item.quality].filter(Boolean).join(" • ")}
+                      </p>
+                    )}
                     <p className="text-[11px] text-slate-500">
                       Qty: {item.quantity} × ৳{item.price.toLocaleString()}
                     </p>

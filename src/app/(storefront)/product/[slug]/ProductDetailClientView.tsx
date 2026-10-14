@@ -131,15 +131,42 @@ interface ProductDetailData {
   relatedProducts?: any[];
 }
 
-export default function ProductDetailClientView({ params }: { params: { slug: string } }) {
+export default function ProductDetailClientView({ 
+  params, 
+  initialProduct 
+}: { 
+  params: { slug: string }; 
+  initialProduct?: ProductDetailData | null;
+}) {
   const router = useRouter();
   const { addItem, setIsCartOpen } = useCart();
-  const [product, setProduct] = useState<ProductDetailData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [product, setProduct] = useState<ProductDetailData | null>(initialProduct || null);
+  const [isLoading, setIsLoading] = useState(!initialProduct);
+
+  const initialAttrs = useMemo(() => {
+    if (!initialProduct) return {};
+    const groups = initialProduct.attributeGroups?.length
+      ? initialProduct.attributeGroups
+      : deriveAttributeGroups(initialProduct.variants || []);
+    const v0 = initialProduct.variants?.[0];
+    const sel: Record<string, string> = {};
+    groups.forEach((g: any) => {
+      if (g.values.length > 0) {
+        const v0Val =
+          v0?.attributes?.[g.name] ||
+          v0?.attributes?.[g.name.toLowerCase()] ||
+          (g.name === "Color" ? v0?.color : g.name === "Quality" ? v0?.quality : null);
+        sel[g.name] = v0Val || g.values[0];
+      }
+    });
+    return sel;
+  }, [initialProduct]);
 
   // Active selections
-  const [selectedImage, setSelectedImage] = useState<string>("");
-  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
+  const [selectedImage, setSelectedImage] = useState<string>(
+    () => initialProduct?.images?.[0]?.url || ""
+  );
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>(initialAttrs);
   const [quantity, setQuantity] = useState(1);
   const [isWishlist, setIsWishlist] = useState(false);
   const [supportPhone, setSupportPhone] = useState(OFFICIAL_CONTACT.phone.tel);
@@ -147,11 +174,13 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
 
   useEffect(() => {
     (async () => {
-      setIsLoading(true);
+      if (!initialProduct) {
+        setIsLoading(true);
+      }
       try {
         const data = await apiGet<ProductDetailData>(`/products/${params.slug}`);
         setProduct(data);
-        if (data?.images?.length) {
+        if (data?.images?.length && !selectedImage) {
           setSelectedImage(data.images[0].url);
         }
 
@@ -170,9 +199,14 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
             initialSelected[g.name] = v0Val || g.values[0];
           }
         });
-        setSelectedAttributes(initialSelected);
+        setSelectedAttributes((prev) => {
+          if (Object.keys(prev).length > 0) return prev;
+          return initialSelected;
+        });
       } catch (err: any) {
-        toast.error(err.message || "Failed to load product details");
+        if (!initialProduct) {
+          toast.error(err.message || "Failed to load product details");
+        }
       } finally {
         setIsLoading(false);
       }
@@ -238,6 +272,42 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
       ...prev,
       [groupName]: value,
     }));
+  };
+
+  // Determine if a particular attribute value is unavailable or completely out of stock with current selections
+  const isOptionDisabled = (groupName: string, val: string) => {
+    if (!product?.variants || product.variants.length === 0) return false;
+
+    const matching = product.variants.filter((v) => {
+      const vAttrs: Record<string, any> = { ...(v.attributes || {}) };
+      if (v.color && !vAttrs.Color && !vAttrs.color) vAttrs.Color = v.color;
+      if (v.quality && !vAttrs.Quality && !vAttrs.quality) vAttrs.Quality = v.quality;
+
+      const vVal =
+        vAttrs[groupName] ??
+        vAttrs[groupName.toLowerCase()] ??
+        (groupName === "Color" ? v.color : groupName === "Quality" ? v.quality : undefined);
+
+      if (vVal === undefined || vVal === null || String(vVal).trim() !== String(val).trim()) {
+        return false;
+      }
+
+      // Check against all other currently selected attributes
+      for (const [otherG, otherV] of Object.entries(selectedAttributes)) {
+        if (otherG === groupName || !otherV) continue;
+        const oVal =
+          vAttrs[otherG] ??
+          vAttrs[otherG.toLowerCase()] ??
+          (otherG === "Color" ? v.color : otherG === "Quality" ? v.quality : undefined);
+        if (oVal !== undefined && oVal !== null && String(oVal).trim() !== String(otherV).trim()) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (matching.length === 0) return true;
+    return matching.every((v) => (v.stock || 0) <= 0);
   };
 
   // Calculate pricing & stock based on active variant selection across all attribute groups
@@ -520,6 +590,7 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
                     <div className="flex flex-wrap gap-2.5">
                       {group.values.map((val) => {
                         const isSelected = currentVal === val;
+                        const isDisabled = isOptionDisabled(group.name, val);
 
                         if (isColorGroup) {
                           const hex = getColorHex(val);
@@ -527,10 +598,13 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
                             <button
                               key={val}
                               type="button"
+                              disabled={isDisabled}
                               onClick={() => handleSelectAttribute(group.name, val)}
                               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
                                 isSelected
                                   ? "border-primary bg-primary/5 text-primary ring-1 ring-primary font-bold shadow-xs"
+                                  : isDisabled
+                                  ? "border-slate-200 text-slate-400 bg-slate-50 opacity-40 cursor-not-allowed line-through"
                                   : "border-slate-200 text-slate-700 bg-white hover:border-slate-300"
                               }`}
                             >
@@ -549,10 +623,13 @@ export default function ProductDetailClientView({ params }: { params: { slug: st
                           <button
                             key={val}
                             type="button"
+                            disabled={isDisabled}
                             onClick={() => handleSelectAttribute(group.name, val)}
                             className={`px-4 py-2 rounded-xl border text-xs font-medium transition-all ${
                               isSelected
                                 ? "border-primary bg-primary text-white font-semibold shadow-xs"
+                                : isDisabled
+                                ? "border-slate-200 bg-slate-50 text-slate-400 opacity-40 cursor-not-allowed line-through"
                                 : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                             }`}
                           >
