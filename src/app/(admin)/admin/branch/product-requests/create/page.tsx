@@ -91,6 +91,7 @@ export default function NewProductRequestPage() {
 
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [requestingBranchId, setRequestingBranchId] = useState<string>("");
   const [fulfillingBranchId, setFulfillingBranchId] = useState<string>("");
 
   // Catalog state
@@ -271,10 +272,31 @@ export default function NewProductRequestPage() {
     toast.success("Request draft saved locally! You can safely resume later.");
   };
 
+  const userBranchId = user?.branchId || "";
+  const effectiveRequestingBranchId = userBranchId || requestingBranchId;
+  const roleName = user?.role?.name?.toLowerCase() || "";
+  const isBranchRole =
+    roleName.includes("branch admin") || roleName.includes("branch manager");
+  const isSuperOrPurchase =
+    roleName.includes("admin") ||
+    roleName.includes("administrator") ||
+    roleName.includes("purchase") ||
+    user?.role?.scope === "GLOBAL";
+
+  const canAccess = isBranchRole || isSuperOrPurchase;
+
   // Submit request
   const handleSubmitRequest = async () => {
+    if (!effectiveRequestingBranchId) {
+      toast.error("Please select a requesting branch.");
+      return;
+    }
     if (!fulfillingBranchId) {
       toast.error("Please select a fulfilling branch to request stock from.");
+      return;
+    }
+    if (fulfillingBranchId === effectiveRequestingBranchId) {
+      toast.error("Fulfilling branch cannot be the requesting branch.");
       return;
     }
     if (cart.length === 0) {
@@ -284,8 +306,9 @@ export default function NewProductRequestPage() {
 
     setSubmitting(true);
     try {
-      const payload = {
+      const payload: any = {
         fulfillingBranchId,
+        requestingBranchId: effectiveRequestingBranchId,
         note: note.trim() || undefined,
         items: cart.map((item) => ({
           productId: item.productId,
@@ -308,11 +331,6 @@ export default function NewProductRequestPage() {
     }
   };
 
-  const userBranchId = user?.branchId || "";
-  const roleName = user?.role?.name?.toLowerCase() || "";
-  const isBranchRole =
-    roleName.includes("branch admin") || roleName.includes("branch manager");
-
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-[500px]">
@@ -321,15 +339,14 @@ export default function NewProductRequestPage() {
     );
   }
 
-  if (!isBranchRole || !userBranchId) {
+  if (!canAccess) {
     return (
       <div className="p-8">
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center max-w-xl mx-auto shadow-sm">
           <AlertCircle className="w-12 h-12 text-amber-600 mx-auto mb-3" />
           <h2 className="text-lg font-bold text-amber-900 mb-1">Access Restricted</h2>
           <p className="text-sm text-amber-700">
-            The Product Requests module is strictly accessible to Branch Admin and Branch
-            Manager roles assigned to an active branch.
+            The Product Requests module is accessible to Administrators, Branch Managers, and Purchase Managers.
           </p>
         </div>
       </div>
@@ -416,6 +433,40 @@ export default function NewProductRequestPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Branch Picker & Product Catalog Browser */}
         <div className="lg:col-span-7 space-y-6">
+          {/* Requesting Branch Picker (Only if user has no assigned branch e.g. Super Admin / Purchase Manager) */}
+          {!userBranchId && (
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+                <Building2 className="w-4 h-4 text-blue-600" />
+                <span>Select Requesting Branch (Requesting Stock For)</span>
+              </div>
+              <p className="text-xs text-slate-500">
+                As a global manager, specify which branch will receive this transferred inventory.
+              </p>
+              <Select
+                value={requestingBranchId}
+                onValueChange={(val) => {
+                  setRequestingBranchId(val);
+                  if (val === fulfillingBranchId) {
+                    setFulfillingBranchId("");
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full text-sm">
+                  <SelectValue placeholder="Search / Select Requesting Branch..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      <span className="font-semibold text-slate-900">{b.name}</span>
+                      {b.city ? <span className="text-xs text-slate-400 ml-2">({b.city})</span> : null}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Step 1: Branch Picker Card */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
             <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
@@ -443,7 +494,7 @@ export default function NewProductRequestPage() {
               </SelectTrigger>
               <SelectContent>
                 {branches
-                  .filter((b) => b.id !== userBranchId)
+                  .filter((b) => b.id !== effectiveRequestingBranchId)
                   .map((b) => (
                     <SelectItem key={b.id} value={b.id}>
                       <span className="font-semibold text-slate-900">{b.name}</span>

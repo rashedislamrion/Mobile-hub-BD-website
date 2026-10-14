@@ -130,8 +130,19 @@ export default function ProductRequestsPage() {
     loadBranches();
   }, []);
 
+  const userBranchId = user?.branchId || "";
+  const roleName = user?.role?.name?.toLowerCase() || "";
+  const isBranchRole =
+    roleName.includes("branch admin") || roleName.includes("branch manager");
+  const isSuperOrPurchase =
+    roleName.includes("admin") ||
+    roleName.includes("administrator") ||
+    roleName.includes("purchase") ||
+    user?.role?.scope === "GLOBAL";
+
+  const canAccess = isBranchRole || isSuperOrPurchase;
+
   const loadRequests = useCallback(async () => {
-    if (!user?.branchId) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -156,18 +167,13 @@ export default function ProductRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.branchId, debouncedSearch, typeFilter, statusFilter, branchFilter, page, limit]);
+  }, [debouncedSearch, typeFilter, statusFilter, branchFilter, page, limit]);
 
   useEffect(() => {
-    if (user?.branchId) {
+    if (canAccess) {
       loadRequests();
     }
-  }, [user?.branchId, loadRequests]);
-
-  const userBranchId = user?.branchId || "";
-  const roleName = user?.role?.name?.toLowerCase() || "";
-  const isBranchRole =
-    roleName.includes("branch admin") || roleName.includes("branch manager");
+  }, [canAccess, loadRequests]);
 
   if (authLoading) {
     return (
@@ -177,15 +183,14 @@ export default function ProductRequestsPage() {
     );
   }
 
-  if (!isBranchRole || !userBranchId) {
+  if (!canAccess) {
     return (
       <div className="p-8">
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center max-w-xl mx-auto shadow-sm">
           <AlertCircle className="w-12 h-12 text-amber-600 mx-auto mb-3" />
           <h2 className="text-lg font-bold text-amber-900 mb-1">Access Restricted</h2>
           <p className="text-sm text-amber-700">
-            The Product Requests module is strictly accessible to Branch Admin and Branch
-            Manager roles assigned to an active branch.
+            The Product Requests module is accessible to Administrators, Branch Managers, and Purchase Managers.
           </p>
         </div>
       </div>
@@ -193,8 +198,12 @@ export default function ProductRequestsPage() {
   }
 
   // Calculate summary stats relative to current branch
-  const sentCount = requests.filter((r) => r.requestingBranchId === userBranchId).length;
-  const receivedCount = requests.filter((r) => r.fulfillingBranchId === userBranchId).length;
+  const sentCount = userBranchId
+    ? requests.filter((r) => r.requestingBranchId === userBranchId).length
+    : requests.length;
+  const receivedCount = userBranchId
+    ? requests.filter((r) => r.fulfillingBranchId === userBranchId).length
+    : requests.length;
   const pendingCount = requests.filter((r) => r.status === "PENDING").length;
 
   return (
@@ -209,10 +218,16 @@ export default function ProductRequestsPage() {
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Product Requests</h1>
               <p className="text-sm text-slate-500">
-                Inter-Branch Stock Requests for{" "}
-                <span className="font-semibold text-slate-800">
-                  {user?.branch?.name || "Your Branch"}
-                </span>
+                {userBranchId ? (
+                  <>
+                    Inter-Branch Stock Requests for{" "}
+                    <span className="font-semibold text-slate-800">
+                      {user?.branch?.name || "Your Branch"}
+                    </span>
+                  </>
+                ) : (
+                  "All Inter-Branch Stock Requests"
+                )}
               </p>
             </div>
           </div>
@@ -418,8 +433,10 @@ export default function ProductRequestsPage() {
                 </tr>
               ) : (
                 requests.map((req) => {
-                  const isSent = req.requestingBranchId === userBranchId;
-                  const partnerBranch = isSent ? req.fulfillingBranch : req.requestingBranch;
+                  const isSent = userBranchId ? req.requestingBranchId === userBranchId : false;
+                  const partnerBranch = userBranchId
+                    ? (isSent ? req.fulfillingBranch : req.requestingBranch)
+                    : null;
 
                   return (
                     <tr
@@ -449,30 +466,50 @@ export default function ProductRequestsPage() {
                         </div>
                       </td>
 
-                      {/* Type (Computed relative to user's branch) */}
+                      {/* Type (Computed relative to user's branch or global) */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        {isSent ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                            Sent
-                          </span>
+                        {userBranchId ? (
+                          isSent ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                              <ArrowUpRight className="w-3.5 h-3.5" />
+                              Sent
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                              <ArrowDownLeft className="w-3.5 h-3.5" />
+                              Received
+                            </span>
+                          )
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                            <ArrowDownLeft className="w-3.5 h-3.5" />
-                            Received
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                            <ArrowLeftRight className="w-3.5 h-3.5" />
+                            Transfer
                           </span>
                         )}
                       </td>
 
-                      {/* Partner Branch */}
+                      {/* Partner Branch / Route */}
                       <td className="px-4 py-3.5">
-                        <div className="font-semibold text-slate-900">
-                          {partnerBranch?.name || "Unknown Branch"}
-                        </div>
-                        <div className="text-xs text-slate-400 flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-slate-400" />
-                          {partnerBranch?.city || isSent ? "Fulfilling" : "Requesting"}
-                        </div>
+                        {userBranchId ? (
+                          <>
+                            <div className="font-semibold text-slate-900">
+                              {partnerBranch?.name || "Unknown Branch"}
+                            </div>
+                            <div className="text-xs text-slate-400 flex items-center gap-1">
+                              <Building2 className="w-3 h-3 text-slate-400" />
+                              {partnerBranch?.city || (isSent ? "Fulfilling" : "Requesting")}
+                            </div>
+                          </>
+                        ) : (
+                          <div>
+                            <div className="text-xs font-medium text-slate-900 flex items-center gap-1.5">
+                              <span className="text-blue-700 font-semibold">{req.requestingBranch?.name}</span>
+                              <span className="text-slate-400">→</span>
+                              <span className="text-purple-700 font-semibold">{req.fulfillingBranch?.name}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400">Requesting → Fulfilling</div>
+                          </div>
+                        )}
                       </td>
 
                       {/* Items Count */}

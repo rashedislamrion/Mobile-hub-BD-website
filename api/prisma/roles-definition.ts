@@ -48,7 +48,7 @@ export const SEED_ROLES: RoleDefinition[] = [
     isSystem: true,
     description: 'Procurement manager handling vendor relations and purchase orders',
     isAllowed: (module, action) => {
-      if (['PURCHASE', 'SUPPLIERS', 'PRODUCTS'].includes(module)) return true;
+      if (['PURCHASE', 'SUPPLIERS', 'PRODUCTS', 'BRANCH'].includes(module)) return true;
       if (module === 'DASHBOARD' && (action === 'READ' || action === 'VIEW_DETAILS')) return true;
       return false;
     },

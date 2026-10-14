@@ -25,6 +25,10 @@ export class CreateProductRequestItemDto {
 }
 
 export class CreateProductRequestDto {
+  @IsOptional()
+  @IsString()
+  requestingBranchId?: string;
+
   @IsNotEmpty()
   @IsString()
   fulfillingBranchId: string;

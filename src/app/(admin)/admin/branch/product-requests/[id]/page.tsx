@@ -146,6 +146,13 @@ export default function ProductRequestDetailPage({
   const roleName = user?.role?.name?.toLowerCase() || "";
   const isBranchRole =
     roleName.includes("branch admin") || roleName.includes("branch manager");
+  const isSuperOrPurchase =
+    roleName.includes("admin") ||
+    roleName.includes("administrator") ||
+    roleName.includes("purchase") ||
+    user?.role?.scope === "GLOBAL";
+
+  const canAccess = isBranchRole || isSuperOrPurchase;
 
   if (authLoading || loading) {
     return (
@@ -155,15 +162,14 @@ export default function ProductRequestDetailPage({
     );
   }
 
-  if (!isBranchRole || !userBranchId) {
+  if (!canAccess) {
     return (
       <div className="p-8">
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center max-w-xl mx-auto shadow-sm">
           <AlertCircle className="w-12 h-12 text-amber-600 mx-auto mb-3" />
           <h2 className="text-lg font-bold text-amber-900 mb-1">Access Restricted</h2>
           <p className="text-sm text-amber-700">
-            The Product Requests module is strictly accessible to Branch Admin and Branch
-            Manager roles assigned to an active branch.
+            The Product Requests module is accessible to Administrators, Branch Managers, and Purchase Managers.
           </p>
         </div>
       </div>
@@ -177,7 +183,7 @@ export default function ProductRequestDetailPage({
           <AlertCircle className="w-12 h-12 text-rose-600 mx-auto mb-3" />
           <h2 className="text-lg font-bold text-rose-900 mb-1">Request Not Found</h2>
           <p className="text-sm text-rose-700 mb-4">
-            The requested product transfer was not found or your branch is not authorized to view it.
+            The requested product transfer was not found or your account is not authorized to view it.
           </p>
           <Link href="/admin/branch/product-requests">
             <Button variant="outline">Back to Product Requests</Button>
@@ -188,8 +194,8 @@ export default function ProductRequestDetailPage({
   }
 
   // Branch and role context
-  const isFulfillingBranch = request.fulfillingBranchId === userBranchId;
-  const isRequestingBranch = request.requestingBranchId === userBranchId;
+  const isFulfillingBranch = request.fulfillingBranchId === userBranchId || isSuperOrPurchase;
+  const isRequestingBranch = request.requestingBranchId === userBranchId || isSuperOrPurchase;
 
   // Stepper handlers for Case A
   const handleApprovedQtyChange = (itemId: string, maxQty: number, nextVal: number) => {

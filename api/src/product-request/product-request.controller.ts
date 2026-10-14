@@ -29,7 +29,7 @@ export class ProductRequestController {
 
   @RequirePermission({
     module: ModuleName.BRANCH,
-    action: PermissionAction.UPDATE,
+    action: PermissionAction.READ,
   })
   @Get()
   findAll(
@@ -53,7 +53,7 @@ export class ProductRequestController {
 
   @RequirePermission({
     module: ModuleName.BRANCH,
-    action: PermissionAction.UPDATE,
+    action: PermissionAction.READ,
   })
   @Get('catalog')
   getCatalog(
@@ -71,7 +71,7 @@ export class ProductRequestController {
 
   @RequirePermission({
     module: ModuleName.BRANCH,
-    action: PermissionAction.UPDATE,
+    action: PermissionAction.READ,
   })
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: JwtPayload) {

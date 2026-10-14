@@ -77,7 +77,12 @@ export function getVisibleNavConfig(
 
   const filterItemForRole = (item: NavItem): boolean => {
     if (item.href === "/admin/branch/product-requests") {
-      return isBranchRole;
+      return (
+        !isRestrictedStaff ||
+        isBranchRole ||
+        roleName.includes("purchase") ||
+        hasPermission("BRANCH", "READ")
+      );
     }
     return true;
   };

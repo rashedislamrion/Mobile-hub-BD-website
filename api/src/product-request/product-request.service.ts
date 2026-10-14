@@ -17,6 +17,20 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 export class ProductRequestService {
   constructor(private prisma: PrismaService) {}
 
+  private async isGlobalStaff(user: JwtPayload): Promise<boolean> {
+    if (!user.roleId) return false;
+    const role = await this.prisma.role.findUnique({
+      where: { id: user.roleId },
+    });
+    if (!role) return false;
+    const name = role.name.toLowerCase();
+    return (
+      role.scope === 'GLOBAL' ||
+      name.includes('admin') ||
+      name.includes('purchase')
+    );
+  }
+
   private async getNextRequestNumber(): Promise<string> {
     const count = await this.prisma.productRequest.count();
     const nextNum = count + 1;
@@ -34,7 +48,8 @@ export class ProductRequestService {
       limit?: number;
     },
   ) {
-    const userBranchId = user.branchId;
+    const isGlobal = await this.isGlobalStaff(user);
+    const userBranchId = isGlobal ? undefined : user.branchId;
 
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
@@ -53,6 +68,19 @@ export class ProductRequestService {
           OR: [
             { requestingBranchId: userBranchId },
             { fulfillingBranchId: userBranchId },
+          ],
+        });
+      }
+    } else if (query.branchId && query.branchId !== 'ALL') {
+      if (query.type === 'SENT') {
+        andConditions.push({ requestingBranchId: query.branchId });
+      } else if (query.type === 'RECEIVED') {
+        andConditions.push({ fulfillingBranchId: query.branchId });
+      } else {
+        andConditions.push({
+          OR: [
+            { requestingBranchId: query.branchId },
+            { fulfillingBranchId: query.branchId },
           ],
         });
       }
@@ -193,8 +221,11 @@ export class ProductRequestService {
       throw new NotFoundException(`Product request "${id}" not found.`);
     }
 
+    const isGlobal = await this.isGlobalStaff(user);
+
     // RBAC: Check that requesting user's branch is either requestingBranch or fulfillingBranch (for branch-scoped users)
     if (
+      !isGlobal &&
       userBranchId &&
       request.requestingBranchId !== userBranchId &&
       request.fulfillingBranchId !== userBranchId
@@ -223,16 +254,17 @@ export class ProductRequestService {
   }
 
   async create(dto: CreateProductRequestDto, user: JwtPayload) {
-    const userBranchId = user.branchId;
-    if (!userBranchId) {
+    const isGlobal = await this.isGlobalStaff(user);
+    const effectiveRequestingBranchId = user.branchId || dto.requestingBranchId;
+    if (!effectiveRequestingBranchId) {
       throw new BadRequestException(
-        'User must be assigned to a branch to create a product request.',
+        'User must be assigned to a branch or specify a requesting branch.',
       );
     }
 
-    if (dto.fulfillingBranchId === userBranchId) {
+    if (dto.fulfillingBranchId === effectiveRequestingBranchId) {
       throw new BadRequestException(
-        'Fulfilling branch cannot be your own branch.',
+        'Fulfilling branch cannot be the requesting branch.',
       );
     }
 
@@ -257,7 +289,7 @@ export class ProductRequestService {
       const request = await tx.productRequest.create({
         data: {
           requestNumber,
-          requestingBranchId: userBranchId,
+          requestingBranchId: effectiveRequestingBranchId,
           fulfillingBranchId: dto.fulfillingBranchId,
           status: ProductRequestStatus.PENDING,
           requestedByUserId: user.sub,
@@ -305,8 +337,9 @@ export class ProductRequestService {
   }
 
   async approve(id: string, dto: ApproveProductRequestDto, user: JwtPayload) {
+    const isGlobal = await this.isGlobalStaff(user);
     const userBranchId = user.branchId;
-    if (!userBranchId) {
+    if (!isGlobal && !userBranchId) {
       throw new ForbiddenException('User must belong to a branch.');
     }
 
@@ -318,10 +351,10 @@ export class ProductRequestService {
       throw new NotFoundException(`Product request "${id}" not found.`);
     }
 
-    // Security check: Only fulfilling branch can approve
-    if (request.fulfillingBranchId !== userBranchId) {
+    // Security check: Only fulfilling branch or global staff can approve
+    if (!isGlobal && request.fulfillingBranchId !== userBranchId) {
       throw new ForbiddenException(
-        'Access denied: Only the fulfilling branch can approve this request.',
+        'Access denied: Only the fulfilling branch or global staff can approve this request.',
       );
     }
 
@@ -377,8 +410,9 @@ export class ProductRequestService {
   }
 
   async reject(id: string, dto: RejectProductRequestDto, user: JwtPayload) {
+    const isGlobal = await this.isGlobalStaff(user);
     const userBranchId = user.branchId;
-    if (!userBranchId) {
+    if (!isGlobal && !userBranchId) {
       throw new ForbiddenException('User must belong to a branch.');
     }
 
@@ -389,10 +423,10 @@ export class ProductRequestService {
       throw new NotFoundException(`Product request "${id}" not found.`);
     }
 
-    // Security check: Only fulfilling branch can reject
-    if (request.fulfillingBranchId !== userBranchId) {
+    // Security check: Only fulfilling branch or global staff can reject
+    if (!isGlobal && request.fulfillingBranchId !== userBranchId) {
       throw new ForbiddenException(
-        'Access denied: Only the fulfilling branch can reject this request.',
+        'Access denied: Only the fulfilling branch or global staff can reject this request.',
       );
     }
 
@@ -418,8 +452,9 @@ export class ProductRequestService {
   }
 
   async complete(id: string, user: JwtPayload) {
+    const isGlobal = await this.isGlobalStaff(user);
     const userBranchId = user.branchId;
-    if (!userBranchId) {
+    if (!isGlobal && !userBranchId) {
       throw new ForbiddenException('User must belong to a branch.');
     }
 
@@ -438,10 +473,10 @@ export class ProductRequestService {
       throw new NotFoundException(`Product request "${id}" not found.`);
     }
 
-    // Security check: Only requesting branch can complete the transfer upon receipt
-    if (request.requestingBranchId !== userBranchId) {
+    // Security check: Only requesting branch or global staff can complete the transfer upon receipt
+    if (!isGlobal && request.requestingBranchId !== userBranchId) {
       throw new ForbiddenException(
-        'Access denied: Only the requesting branch can confirm and complete physical stock transfer.',
+        'Access denied: Only the requesting branch or global staff can confirm and complete physical stock transfer.',
       );
     }
 
