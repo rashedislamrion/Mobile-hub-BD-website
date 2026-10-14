@@ -124,9 +124,16 @@ export function PosRecentSalesModal({
                       return (
                         <tr key={order.id} className="hover:bg-slate-50/70 transition-colors">
                           <td className="py-2.5 px-3">
-                            <span className="font-mono font-bold text-slate-900 block">
-                              #{order.orderCode}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {order.shortCode && (
+                                <span className="font-mono font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[11px]">
+                                  {order.shortCode}
+                                </span>
+                              )}
+                              <span className="font-mono font-semibold text-slate-800 text-xs">
+                                #{order.orderCode}
+                              </span>
+                            </div>
                             <span className="text-[10px] text-slate-400 block">
                               {new Date(order.createdAt).toLocaleDateString()}
                             </span>

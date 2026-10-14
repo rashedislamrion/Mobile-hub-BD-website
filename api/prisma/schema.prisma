@@ -814,6 +814,8 @@ model WastedProduct {
 model Order {
   id                String               @id @default(cuid())
   orderCode         String               @unique
+  orderSeq          Int?                 @unique
+  shortCode         String?
   customerId        String?
   customer          Customer?            @relation(fields: [customerId], references: [id])
   branchId          String
@@ -854,6 +856,7 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([needsStockReview])
+  @@index([shortCode])
   @@index([customerId, branchId, status, createdAt])
 }
 
@@ -1204,6 +1207,8 @@ model SupplierPayment {
 model PurchaseOrder {
   id                   String              @id @default(cuid())
   poNumber             String              @unique
+  poSeq                Int?                @unique
+  shortCode            String?
   invoiceNumber        String?
   documentUrl          String?
   internalNotes        String?
@@ -1225,6 +1230,8 @@ model PurchaseOrder {
   payments             SupplierPayment[]
   phoneUnits           PhoneUnit[]
   createdAt            DateTime            @default(now())
+
+  @@index([shortCode])
 }
 
 model PurchaseOrderItem {

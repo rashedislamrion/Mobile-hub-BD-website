@@ -243,7 +243,7 @@ export function PosInvoiceReceipt({ order, shopSettings }: PosInvoiceReceiptProp
             <div className="flex items-end gap-1.5 flex-1 min-w-0">
               <span className="font-bold text-slate-900 shrink-0 leading-none pb-0.5">Sl.&nbsp;No.&nbsp;:</span>
               <span className="font-mono font-bold text-slate-900 px-1 leading-none shrink-0 pb-0.5">
-                {order.orderCode}
+                {order.shortCode ? `${order.shortCode} (${order.orderCode})` : order.orderCode}
               </span>
               <div className="flex-1 min-w-4 border-b border-dotted border-slate-700 mb-0.5" />
             </div>

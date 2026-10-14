@@ -40,7 +40,7 @@ export default function PurchaseOrderViewPage() {
       setIsLoading(true);
       const res = await apiGet<any>(`/purchase-orders/${params.id}`);
       setPo(res);
-      if (res?.poNumber) setTitle(`Purchase Order: ${res.poNumber}`);
+      if (res?.poNumber) setTitle(res.shortCode ? `Purchase Order: ${res.shortCode} (${res.poNumber})` : `Purchase Order: ${res.poNumber}`);
 
       const map: Record<string, number> = {};
       (res?.items || []).forEach((item: any) => {
@@ -136,7 +136,14 @@ export default function PurchaseOrderViewPage() {
         {/* Header Info */}
         <div className="flex justify-between items-start border-b border-slate-100 pb-8 mb-8">
           <div>
-            <h1 className="text-3xl font-black text-slate-800 mb-2">{po.poNumber}</h1>
+            <div className="flex items-center gap-2 mb-2">
+              {po.shortCode && (
+                <span className="text-sm font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                  {po.shortCode}
+                </span>
+              )}
+              <h1 className="text-3xl font-black text-slate-800">{po.poNumber}</h1>
+            </div>
             <div className="flex items-center gap-3 mb-4">
               <StatusBadge status={po.status.replace("_", " ")} type={po.status === "RECEIVED" ? "success" : "warning"} />
               <span className="text-sm font-medium text-slate-500">{new Date(po.orderDate).toLocaleDateString("en-GB")}</span>

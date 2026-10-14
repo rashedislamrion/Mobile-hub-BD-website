@@ -41,6 +41,8 @@ import { AdminTableState } from "@/components/admin/AdminTableState";
 interface PurchaseOrderItem {
   id: string;
   poNumber: string;
+  poSeq?: number;
+  shortCode?: string;
   invoiceNumber?: string | null;
   documentUrl?: string | null;
   internalNotes?: string | null;
@@ -473,8 +475,15 @@ export default function PurchaseOrdersPage() {
 
                       {/* MEMO */}
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{po.poNumber}</div>
-                        <div className="text-[11px] text-slate-500 font-mono">
+                        <div className="flex items-center gap-1.5">
+                          {po.shortCode && (
+                            <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded text-xs">
+                              {po.shortCode}
+                            </span>
+                          )}
+                          <span className="font-bold text-slate-900">{po.poNumber}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                           {po.invoiceNumber ? `Inv: ${po.invoiceNumber}` : "No Invoice"}
                         </div>
                       </td>

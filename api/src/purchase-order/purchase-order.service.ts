@@ -92,6 +92,7 @@ export class PurchaseOrderService {
       const term = query.search.trim();
       where.OR = [
         { poNumber: { contains: term, mode: 'insensitive' } },
+        { shortCode: { contains: term, mode: 'insensitive' } },
         { invoiceNumber: { contains: term, mode: 'insensitive' } },
         { supplier: { name: { contains: term, mode: 'insensitive' } } },
         { supplier: { phone: { contains: term, mode: 'insensitive' } } },
@@ -446,10 +447,19 @@ export class PurchaseOrderService {
     }
 
     const dueAmount = Math.max(0, grandTotal - totalAmountPaid);
-    const poNumber = `PO-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
     const isDraft = dto.status === PurchaseOrderStatus.DRAFT;
 
     return this.prisma.$transaction(async (tx) => {
+      // Generate sequential PO sequence and shortCode (#PO-001, #PO-002...)
+      const lastPo = await tx.purchaseOrder.findFirst({
+        where: { poSeq: { not: null } },
+        orderBy: { poSeq: 'desc' },
+        select: { poSeq: true },
+      });
+      const poSeq = (lastPo?.poSeq || 0) + 1;
+      const shortCode = `#PO-${String(poSeq).padStart(3, '0')}`;
+      const poNumber = (dto as any).poNumber?.trim() || `PO-${String(poSeq).padStart(3, '0')}`;
+
       const createdPayments: any[] = [];
       const createdWalletTxns: any[] = [];
 
@@ -509,6 +519,8 @@ export class PurchaseOrderService {
       const po = await tx.purchaseOrder.create({
         data: {
           poNumber,
+          poSeq,
+          shortCode,
           invoiceNumber: dto.invoiceNumber || null,
           documentUrl: dto.documentUrl || null,
           internalNotes: dto.internalNotes || dto.note || null,

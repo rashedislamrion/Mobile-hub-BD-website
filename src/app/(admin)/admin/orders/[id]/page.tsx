@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface OrderDetail {
   id: string;
   orderCode: string;
+  orderSeq?: number;
+  shortCode?: string;
   createdAt: string;
   saleType: string;
   status: string;
@@ -96,7 +98,7 @@ export default function OrderDetailsPage({ params }: { params: { id: string } })
 
   useEffect(() => {
     if (order) {
-      setTitle(`Order ${order.orderCode}`);
+      setTitle(order.shortCode ? `Order ${order.shortCode} (${order.orderCode})` : `Order ${order.orderCode}`);
       setBadge(order.saleType || "Website");
       setDateFilter("");
     }
@@ -205,9 +207,16 @@ export default function OrderDetailsPage({ params }: { params: { id: string } })
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex justify-between items-center">
             <h3 className="font-semibold text-slate-800">Order Items</h3>
-            <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md">
-              {order.orderCode}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {order.shortCode && (
+                <span className="text-xs font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-md">
+                  {order.shortCode}
+                </span>
+              )}
+              <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md">
+                {order.orderCode}
+              </span>
+            </div>
           </div>
           <div className="p-0 overflow-x-auto">
             <table className="w-full text-sm text-left">

@@ -28,6 +28,8 @@ interface OrderItem {
 interface SaleRecord {
   id: string;
   orderCode: string;
+  orderSeq?: number;
+  shortCode?: string;
   createdAt: string;
   branch?: { id: string; name: string };
   saleType: string;
@@ -226,12 +228,19 @@ export default function AllSalesPage() {
       accessorKey: "orderCode",
       header: "ID",
       cell: ({ row }) => (
-        <span 
+        <div 
           onClick={() => router.push(`/admin/orders/${row.original.id}`)}
-          className="font-mono font-bold text-slate-800 hover:text-emerald-600 cursor-pointer"
+          className="flex items-center gap-1.5 cursor-pointer group"
         >
-          {row.original.orderCode}
-        </span>
+          {row.original.shortCode && (
+            <span className="font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-xs group-hover:bg-blue-100">
+              {row.original.shortCode}
+            </span>
+          )}
+          <span className="font-mono font-bold text-slate-800 group-hover:text-emerald-600 text-xs">
+            {row.original.orderCode}
+          </span>
+        </div>
       ),
     },
     {

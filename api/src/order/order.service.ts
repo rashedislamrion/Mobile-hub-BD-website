@@ -114,6 +114,7 @@ export class OrderService {
       const s = query.search.trim();
       where.OR = [
         { orderCode: { contains: s, mode: 'insensitive' } },
+        { shortCode: { contains: s, mode: 'insensitive' } },
         { customer: { name: { contains: s, mode: 'insensitive' } } },
         { customer: { phone: { contains: s, mode: 'insensitive' } } },
       ];
@@ -510,9 +511,20 @@ export class OrderService {
         });
       }
 
+      // Generate sequential order sequence and shortCode (#001, #002...)
+      const lastOrder = await tx.order.findFirst({
+        where: { orderSeq: { not: null } },
+        orderBy: { orderSeq: 'desc' },
+        select: { orderSeq: true },
+      });
+      const orderSeq = (lastOrder?.orderSeq || 0) + 1;
+      const shortCode = `#${String(orderSeq).padStart(3, '0')}`;
+
       let order = await tx.order.create({
         data: {
           orderCode,
+          orderSeq,
+          shortCode,
           branchId: dto.branchId,
           customerId: dto.customerId || null,
           saleType: effectiveSaleType,
@@ -1216,9 +1228,20 @@ export class OrderService {
 
       const effectiveNotes = (dto.orderNotes || dto.notes || '').trim();
 
+      // Generate sequential order sequence and shortCode (#001, #002...)
+      const lastOrder = await tx.order.findFirst({
+        where: { orderSeq: { not: null } },
+        orderBy: { orderSeq: 'desc' },
+        select: { orderSeq: true },
+      });
+      const orderSeq = (lastOrder?.orderSeq || 0) + 1;
+      const shortCode = `#${String(orderSeq).padStart(3, '0')}`;
+
       const order = await tx.order.create({
         data: {
           orderCode,
+          orderSeq,
+          shortCode,
           branchId,
           customerId,
           saleType: SaleType.WEBSITE,
