@@ -6,10 +6,11 @@ import { FilterBar } from "@/components/admin/FilterBar";
 import { DataTable, StatusBadge, ActionDropdown } from "@/components/admin/DataTable";
 import { FilterConfig, StatusVariant, TableAction } from "@/types/table";
 import { ColumnDef } from "@tanstack/react-table";
-import { Eye, CheckCircle, Edit, Trash2 } from "lucide-react";
+import { Eye, CheckCircle, Edit, Trash2, CreditCard } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPatch } from "@/lib/api-client";
 import { toast } from "sonner";
+import { AddOrderPaymentModal } from "@/components/admin/orders/AddOrderPaymentModal";
 
 interface OrderItem {
   id: string;
@@ -40,6 +41,7 @@ export default function OrdersPage() {
   const router = useRouter();
   
   const [data, setData] = useState<OrderRecord[]>([]);
+  const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<OrderRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState<Record<string, unknown>>({});
@@ -146,23 +148,39 @@ export default function OrdersPage() {
     },
   ], [branches]);
 
-  const createActions = (): TableAction[] => [
-    {
-      label: "View Details",
-      icon: <Eye className="w-4 h-4" />,
-      onClick: (row) => router.push(`/admin/orders/${row.id}`),
-    },
-    {
-      label: "Mark Confirmed",
-      icon: <CheckCircle className="w-4 h-4 text-blue-600" />,
-      onClick: (row) => handleUpdateStatus(row.id, "CONFIRMED"),
-    },
-    {
-      label: "Mark Delivered",
-      icon: <CheckCircle className="w-4 h-4 text-emerald-600" />,
-      onClick: (row) => handleUpdateStatus(row.id, "DELIVERED"),
-    },
-  ];
+  const createActions = (row: OrderRecord): TableAction[] => {
+    const actions: TableAction[] = [
+      {
+        label: "View Details",
+        icon: <Eye className="w-4 h-4" />,
+        onClick: (r) => router.push(`/admin/orders/${r.id}`),
+      },
+    ];
+
+    const due = Number(row.dueAmount || 0);
+    if (due > 0 || row.paymentStatus === "DUE") {
+      actions.push({
+        label: "Add Payment",
+        icon: <CreditCard className="w-4 h-4 text-emerald-600" />,
+        onClick: (r) => setSelectedOrderForPayment(r),
+      });
+    }
+
+    actions.push(
+      {
+        label: "Mark Confirmed",
+        icon: <CheckCircle className="w-4 h-4 text-blue-600" />,
+        onClick: (r) => handleUpdateStatus(r.id, "CONFIRMED"),
+      },
+      {
+        label: "Mark Delivered",
+        icon: <CheckCircle className="w-4 h-4 text-emerald-600" />,
+        onClick: (r) => handleUpdateStatus(r.id, "DELIVERED"),
+      }
+    );
+
+    return actions;
+  };
 
   const getPaymentStatusVariant = (status: string): StatusVariant => {
     switch (status) {
@@ -289,7 +307,7 @@ export default function OrdersPage() {
       header: "Action",
       cell: ({ row }) => (
         <div className="flex justify-end">
-          <ActionDropdown actions={createActions()} rowData={row.original} />
+          <ActionDropdown actions={createActions(row.original)} rowData={row.original} />
         </div>
       ),
     },
@@ -313,6 +331,15 @@ export default function OrdersPage() {
         data={data} 
         pageSize={10}
       />
+
+      {selectedOrderForPayment && (
+        <AddOrderPaymentModal
+          isOpen={Boolean(selectedOrderForPayment)}
+          onClose={() => setSelectedOrderForPayment(null)}
+          order={selectedOrderForPayment}
+          onSuccess={loadData}
+        />
+      )}
     </div>
   );
 }

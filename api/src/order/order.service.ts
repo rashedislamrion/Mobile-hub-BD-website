@@ -14,6 +14,7 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { AddOrderNoteDto } from './dto/add-order-note.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { CheckoutOrderDto } from './dto/checkout-order.dto';
+import { AddOrderPaymentDto } from './dto/add-order-payment.dto';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import {
   ModuleName,
@@ -475,13 +476,6 @@ export class OrderService {
       const paidAmount = Number(dto.paidAmount || 0);
       const dueAmount = Math.max(0, totalAmount - paidAmount);
 
-      let paymentStatus: PaymentStatus = PaymentStatus.PENDING;
-      if (dueAmount <= 0) {
-        paymentStatus = PaymentStatus.PAID;
-      } else if (paidAmount > 0) {
-        paymentStatus = PaymentStatus.DUE;
-      }
-
       let initialStatus: OrderStatus = OrderStatus.CONFIRMED;
       let effectiveSaleType: SaleType = dto.saleType || SaleType.POS;
 
@@ -499,6 +493,13 @@ export class OrderService {
         effectiveSaleType = SaleType.WEBSITE;
       } else if (dto.status) {
         initialStatus = dto.status;
+      }
+
+      let paymentStatus: PaymentStatus = PaymentStatus.PENDING;
+      if (dueAmount <= 0) {
+        paymentStatus = PaymentStatus.PAID;
+      } else if (paidAmount > 0 || effectiveSaleType === SaleType.POS || effectiveSaleType === SaleType.DIAGNOSING) {
+        paymentStatus = PaymentStatus.DUE;
       }
 
       let customerRecord: any = null;
@@ -1419,6 +1420,123 @@ export class OrderService {
       await tx.orderNote.deleteMany({ where: { orderId: id } });
       await tx.orderItem.deleteMany({ where: { orderId: id } });
       return tx.order.delete({ where: { id } });
+    });
+  }
+
+  async addPayment(id: string, dto: AddOrderPaymentDto, user?: JwtPayload) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        serviceJob: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID "${id}" not found.`);
+    }
+
+    const currentDue = Number(order.dueAmount || 0);
+    if (currentDue <= 0) {
+      throw new BadRequestException('This order is already fully paid.');
+    }
+
+    const paymentAmount = Number(dto.amount);
+    if (!paymentAmount || paymentAmount <= 0) {
+      throw new BadRequestException('Payment amount must be greater than zero.');
+    }
+
+    if (paymentAmount > currentDue) {
+      throw new BadRequestException(
+        `Payment amount (৳${paymentAmount}) cannot exceed remaining due (৳${currentDue}).`,
+      );
+    }
+
+    const discount = Number(dto.discount || 0);
+    const newPaid = Number(order.paidAmount || 0) + paymentAmount;
+    const newDue = Math.max(0, currentDue - paymentAmount - discount);
+    const newPaymentStatus = newDue <= 0 ? PaymentStatus.PAID : PaymentStatus.DUE;
+
+    const customerId = order.customerId || dto.customerId;
+    if (!customerId) {
+      throw new BadRequestException(
+        'A customer is required to record a partial or due payment on this order.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // If customer wasn't attached originally, link now
+      if (!order.customerId && customerId) {
+        await tx.order.update({
+          where: { id },
+          data: { customerId },
+        });
+      }
+
+      // Update Order
+      const updatedOrder = await tx.order.update({
+        where: { id },
+        data: {
+          paidAmount: newPaid,
+          dueAmount: newDue,
+          paymentStatus: newPaymentStatus,
+          statusHistory: {
+            create: {
+              status: order.status,
+              note: `Payment of ৳${paymentAmount.toLocaleString()} received via ${dto.paymentMethod}. Remaining due: ৳${newDue.toLocaleString()}.`,
+              changedById: user?.userType === 'STAFF' ? user.sub : null,
+            },
+          },
+        },
+        include: {
+          customer: true,
+          branch: true,
+          items: true,
+        },
+      });
+
+      // Create Payment record
+      await tx.payment.create({
+        data: {
+          orderId: order.id,
+          customerId,
+          amount: new Prisma.Decimal(paymentAmount),
+          discount: new Prisma.Decimal(discount),
+          paymentMethod: dto.paymentMethod,
+          paymentChannel: dto.paymentChannel || dto.paymentMethod,
+          note: dto.note || `Payment received for order #${order.orderCode}`,
+        },
+      });
+
+      // Customer Activity
+      await tx.customerActivity.create({
+        data: {
+          customerId,
+          type: 'PAYMENT_RECEIVED' as any,
+          description: `Received payment of ৳${paymentAmount.toLocaleString()} for order #${order.orderCode}. Remaining due: ৳${newDue.toLocaleString()}.`,
+          metadata: {
+            orderId: order.id,
+            orderCode: order.orderCode,
+            paymentAmount,
+            remainingDue: newDue,
+          },
+        },
+      });
+
+      // If linked to ServiceJob, update ServiceJob as well
+      if (order.serviceJob) {
+        const srvPaid = Number(order.serviceJob.paidAmount || 0) + paymentAmount;
+        const srvDue = Math.max(0, Number(order.serviceJob.dueAmount || 0) - paymentAmount);
+        await tx.serviceJob.update({
+          where: { id: order.serviceJob.id },
+          data: {
+            paidAmount: srvPaid,
+            dueAmount: srvDue,
+          },
+        });
+      }
+
+      return updatedOrder;
     });
   }
 }

@@ -6,7 +6,7 @@ import { FilterBar } from "@/components/admin/FilterBar";
 import { DataTable, StatusBadge, ActionDropdown } from "@/components/admin/DataTable";
 import { FilterConfig, StatusVariant, TableAction } from "@/types/table";
 import { ColumnDef } from "@tanstack/react-table";
-import { Eye, FileText } from "lucide-react";
+import { Eye, FileText, CreditCard } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiGet } from "@/lib/api-client";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { AddOrderPaymentModal } from "@/components/admin/orders/AddOrderPaymentModal";
 
 interface OrderItem {
   id: string;
@@ -33,6 +34,8 @@ interface SaleRecord {
   customer?: { id: string; name: string; phone: string; email: string };
   items: OrderItem[];
   totalAmount: number | string;
+  paidAmount?: number | string;
+  dueAmount?: number | string;
   paymentStatus: string;
   status: string;
   staff?: { id: string; name: string };
@@ -43,6 +46,7 @@ export default function AllSalesPage() {
   const router = useRouter();
   
   const [data, setData] = useState<SaleRecord[]>([]);
+  const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<SaleRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState<Record<string, unknown>>({});
@@ -143,13 +147,26 @@ export default function AllSalesPage() {
     },
   ], [branches]);
 
-  const createActions = (): TableAction[] => [
-    {
-      label: "View Details",
-      icon: <Eye className="w-4 h-4" />,
-      onClick: (row) => router.push(`/admin/orders/${row.id}`),
-    },
-  ];
+  const createActions = (row: SaleRecord): TableAction[] => {
+    const actions: TableAction[] = [
+      {
+        label: "View Details",
+        icon: <Eye className="w-4 h-4" />,
+        onClick: (r) => router.push(`/admin/orders/${r.id}`),
+      },
+    ];
+
+    const due = Number(row.dueAmount || 0);
+    if (due > 0 || row.paymentStatus === "DUE") {
+      actions.push({
+        label: "Add Payment",
+        icon: <CreditCard className="w-4 h-4 text-emerald-600" />,
+        onClick: (r) => setSelectedOrderForPayment(r),
+      });
+    }
+
+    return actions;
+  };
 
   const getPaymentStatusVariant = (status: string): StatusVariant => {
     switch (status) {
@@ -300,7 +317,7 @@ export default function AllSalesPage() {
       header: "Action",
       cell: ({ row }) => (
         <div className="flex justify-end">
-          <ActionDropdown actions={createActions()} rowData={row.original} />
+          <ActionDropdown actions={createActions(row.original)} rowData={row.original} />
         </div>
       ),
     },
@@ -324,6 +341,15 @@ export default function AllSalesPage() {
         data={data} 
         pageSize={10}
       />
+
+      {selectedOrderForPayment && (
+        <AddOrderPaymentModal
+          isOpen={Boolean(selectedOrderForPayment)}
+          onClose={() => setSelectedOrderForPayment(null)}
+          order={selectedOrderForPayment}
+          onSuccess={loadData}
+        />
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { AddOrderNoteDto } from './dto/add-order-note.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { CheckoutOrderDto } from './dto/checkout-order.dto';
+import { AddOrderPaymentDto } from './dto/add-order-payment.dto';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -188,6 +189,19 @@ export class OrderController {
     @CurrentUser() user?: JwtPayload,
   ) {
     return this.orderService.update(id, dto, user);
+  }
+
+  @RequirePermission({
+    module: ModuleName.ORDERS,
+    action: PermissionAction.UPDATE,
+  })
+  @Post(':id/payments')
+  addPayment(
+    @Param('id') id: string,
+    @Body() dto: AddOrderPaymentDto,
+    @CurrentUser() user?: JwtPayload,
+  ) {
+    return this.orderService.addPayment(id, dto, user);
   }
 
   @RequirePermission({

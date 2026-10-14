@@ -31,7 +31,9 @@ import {
   Clock,
   ExternalLink,
   Calendar,
+  History,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -42,8 +44,16 @@ import {
 } from "@/components/ui/dialog";
 import { PosInvoiceModal } from "@/components/admin/pos/PosInvoiceModal";
 import { PosProductModal } from "@/components/admin/pos/PosProductModal";
+import { PosRecentSalesModal } from "@/components/admin/pos/PosRecentSalesModal";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+
+const AVAILABLE_PAYMENT_METHODS = [
+  { id: "CASH", label: "Cash" },
+  { id: "BKASH", label: "bKash" },
+  { id: "CARD", label: "Card" },
+  { id: "BANK_TRANSFER", label: "Bank Transfer" },
+];
 
 interface PosProductVariant {
   id: string;
@@ -203,10 +213,10 @@ export default function PosTerminalPage() {
   const [showNote, setShowNote] = useState(false);
   const [orderNote, setOrderNote] = useState("");
 
-  // Payment Method State
-  const [paymentMode, setPaymentMode] = useState<"CASH" | "SPLIT" | "PAY_LATER">("CASH");
-  const [splitCashAmount, setSplitCashAmount] = useState<number | string>("");
-  const [splitBankAmount, setSplitBankAmount] = useState<number | string>("");
+  // Payment Method & Collection State
+  const [selectedPaymentMethods, setSelectedPaymentMethods] = useState<string[]>(["CASH"]);
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<string, number | string>>({ CASH: "" });
+  const [recentSalesOpen, setRecentSalesOpen] = useState(false);
 
   // Submission State
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -455,9 +465,8 @@ export default function PosTerminalPage() {
     setCourierAddress("");
     setShowNote(false);
     setOrderNote("");
-    setPaymentMode("CASH");
-    setSplitCashAmount("");
-    setSplitBankAmount("");
+    setSelectedPaymentMethods(["CASH"]);
+    setPaymentAmounts({ CASH: "" });
   };
 
   // Financial Calculations (Numeric-Safe)
@@ -481,8 +490,58 @@ export default function PosTerminalPage() {
 
   const netTotal = Math.max(0, cartSubtotal - calculatedDiscount + calculatedDelivery);
 
-  // Split payment validation
-  const splitTotal = (Number(splitCashAmount) || 0) + (Number(splitBankAmount) || 0);
+  // Multi-method payment helpers
+  const handleTogglePaymentMethod = (methodId: string) => {
+    setSelectedPaymentMethods((prev) => {
+      if (prev.includes(methodId)) {
+        if (prev.length === 1) {
+          toast.warning("At least one payment method must remain selected.");
+          return prev;
+        }
+        setPaymentAmounts((amounts) => {
+          const next = { ...amounts };
+          delete next[methodId];
+          return next;
+        });
+        return prev.filter((m) => m !== methodId);
+      } else {
+        return [...prev, methodId];
+      }
+    });
+  };
+
+  const handlePaymentAmountChange = (methodId: string, value: string | number) => {
+    setPaymentAmounts((prev) => ({
+      ...prev,
+      [methodId]: value === "" ? "" : Number(value) || 0,
+    }));
+  };
+
+  const totalPaidAmount = useMemo(() => {
+    return selectedPaymentMethods.reduce((sum, method) => {
+      return sum + (Number(paymentAmounts[method]) || 0);
+    }, 0);
+  }, [selectedPaymentMethods, paymentAmounts]);
+
+  const dueAmount = Math.max(0, netTotal - totalPaidAmount);
+
+  const handleQuickFillFullPayment = () => {
+    if (selectedPaymentMethods.length === 0) return;
+    const primary = selectedPaymentMethods[0];
+    const newAmounts: Record<string, number | string> = {};
+    selectedPaymentMethods.forEach((m) => {
+      newAmounts[m] = m === primary ? netTotal : 0;
+    });
+    setPaymentAmounts(newAmounts);
+  };
+
+  const handleQuickPayLater = () => {
+    const newAmounts: Record<string, number | string> = {};
+    selectedPaymentMethods.forEach((m) => {
+      newAmounts[m] = 0;
+    });
+    setPaymentAmounts(newAmounts);
+  };
 
   // Sale Submission
   const handleProcessOrder = async (isDiagnosingAction = false) => {
@@ -501,11 +560,14 @@ export default function PosTerminalPage() {
       return;
     }
 
-    if (paymentMode === "SPLIT" && !isDiagnosingAction) {
-      if (splitTotal !== netTotal) {
-        toast.error(`Split payment total (৳${splitTotal.toLocaleString()}) must equal the Net Payable (৳${netTotal.toLocaleString()}). Difference: ৳${(netTotal - splitTotal).toLocaleString()}`);
-        return;
-      }
+    if (dueAmount > 0 && !selectedCustomer?.id) {
+      toast.error("Customer selection is required when there is an unpaid due balance.");
+      return;
+    }
+
+    if (totalPaidAmount > netTotal) {
+      toast.error(`Total paid amount (৳${totalPaidAmount.toLocaleString()}) cannot exceed Net Payable (৳${netTotal.toLocaleString()}).`);
+      return;
     }
 
     try {
@@ -514,24 +576,31 @@ export default function PosTerminalPage() {
       // Determine payment & sale types
       let saleType: "POS" | "COURIER" | "DIAGNOSING" = "POS";
       let status: "CONFIRMED" | "DIAGNOSING" | "PENDING" = "CONFIRMED";
-      let paidAmount = netTotal;
+      let paidAmount = totalPaidAmount;
 
       if (isDiagnosingAction) {
         saleType = "DIAGNOSING";
         status = "DIAGNOSING";
-        paidAmount = paymentMode === "PAY_LATER" ? 0 : netTotal;
       } else if (showCourier) {
         saleType = "COURIER";
         status = "PENDING";
-        paidAmount = paymentMode === "PAY_LATER" ? 0 : netTotal;
-      } else if (paymentMode === "PAY_LATER") {
-        paidAmount = 0;
-      } else if (paymentMode === "SPLIT") {
-        paidAmount = splitTotal;
       }
 
       // Check if service line items exist
       const serviceItem = cart.find((i) => i.isService);
+
+      const activeMethods = selectedPaymentMethods.filter((m) => (Number(paymentAmounts[m]) || 0) > 0);
+      let resolvedPaymentMethod = "CASH";
+      if (paidAmount === 0) {
+        resolvedPaymentMethod = "DUE";
+      } else if (activeMethods.length > 1) {
+        resolvedPaymentMethod = "SPLIT";
+      } else if (activeMethods.length === 1) {
+        resolvedPaymentMethod = activeMethods[0];
+      }
+
+      const splitBreakdown = activeMethods.map((m) => `${m}: ৳${Number(paymentAmounts[m])}`).join(", ");
+      const resolvedNote = orderNote.trim() || (activeMethods.length > 1 ? `Split: ${splitBreakdown}` : undefined);
 
       const payload = {
         branchId: currentBranchId,
@@ -539,7 +608,7 @@ export default function PosTerminalPage() {
         saleDate: orderSaleDate ? new Date(orderSaleDate).toISOString() : undefined,
         saleType,
         status,
-        paymentMethod: paymentMode === "PAY_LATER" ? "DUE" : (paymentMode === "SPLIT" ? "SPLIT" : (selectedPaymentChannel as any)),
+        paymentMethod: resolvedPaymentMethod as any,
         items: cart.map((item) => ({
           productId: item.productId.startsWith("service-item") ? products[0]?.productId || item.productId : item.productId,
           variantId: item.variantId,
@@ -556,7 +625,7 @@ export default function PosTerminalPage() {
         discountAmount: calculatedDiscount,
         deliveryCharge: calculatedDelivery,
         paidAmount,
-        note: orderNote.trim() || (paymentMode === "SPLIT" ? `Split Payment: Cash ৳${Number(splitCashAmount || 0)}, Bank/Digital ৳${Number(splitBankAmount || 0)}` : undefined),
+        note: resolvedNote,
         shippingAddress: showCourier ? courierAddress || selectedCustomer?.addresses?.[0]?.fullAddress || "Customer Delivery Address" : undefined,
         courierPartner: showCourier ? courierPartner : undefined,
         technicianId: isTechnician ? (user?.id || (user as any)?.sub) : undefined,
@@ -632,21 +701,34 @@ export default function PosTerminalPage() {
                 </div>
               )}
 
-              {/* Branch Indicator */}
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-                <Store className="w-4 h-4 text-emerald-600" />
-                <span>Outlet:</span>
-                <select
-                  value={currentBranchId}
-                  onChange={(e) => setCurrentBranchId(e.target.value)}
-                  className="bg-transparent font-bold text-slate-900 outline-none cursor-pointer"
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRecentSalesOpen(true)}
+                  className="h-8 px-2.5 text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 gap-1.5 shadow-xs"
                 >
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
+                  <History className="w-3.5 h-3.5 text-emerald-600" />
+                  Recent Sales & Due
+                </Button>
+
+                {/* Branch Indicator */}
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                  <Store className="w-4 h-4 text-emerald-600" />
+                  <span>Outlet:</span>
+                  <select
+                    value={currentBranchId}
+                    onChange={(e) => setCurrentBranchId(e.target.value)}
+                    className="bg-transparent font-bold text-slate-900 outline-none cursor-pointer"
+                  >
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1300,120 +1382,87 @@ export default function PosTerminalPage() {
               )}
             </div>
 
-            {/* Payment Method Selector */}
-            <div className="border-t border-slate-100 pt-3 space-y-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                Payment Option
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode("CASH")}
-                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
-                    paymentMode === "CASH"
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                      : "border-slate-200 hover:bg-slate-50 text-slate-700"
-                  }`}
-                >
-                  Direct Pay
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPaymentMode("SPLIT");
-                    setSplitCashAmount(Math.round(netTotal / 2));
-                    setSplitBankAmount(netTotal - Math.round(netTotal / 2));
-                  }}
-                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
-                    paymentMode === "SPLIT"
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                      : "border-slate-200 hover:bg-slate-50 text-slate-700"
-                  }`}
-                >
-                  Split Pay
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode("PAY_LATER")}
-                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
-                    paymentMode === "PAY_LATER"
-                      ? "bg-amber-600 text-white border-amber-600 shadow-sm"
-                      : "border-slate-200 hover:bg-slate-50 text-slate-700"
-                  }`}
-                >
-                  Pay Later
-                </button>
+            {/* Payment Method Selector & Collection */}
+            <div className="border-t border-slate-100 pt-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Payment Method(s) <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleQuickFillFullPayment}
+                    className="text-[11px] text-emerald-600 font-bold hover:underline"
+                  >
+                    Pay Full (৳{netTotal.toLocaleString()})
+                  </button>
+                  <span className="text-slate-300">•</span>
+                  <button
+                    type="button"
+                    onClick={handleQuickPayLater}
+                    className="text-[11px] text-amber-600 font-bold hover:underline"
+                  >
+                    Pay Later (Due)
+                  </button>
+                </div>
               </div>
 
-              {/* Channel Selector for Direct Pay */}
-              {paymentMode === "CASH" && (
-                <div className="pt-1">
-                  <span className="block text-[10px] font-semibold text-slate-500 mb-1.5">Payment Method / Channel</span>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {[
-                      { id: "CASH", label: "Cash" },
-                      { id: "BKASH", label: "bKash" },
-                      { id: "NAGAD", label: "Nagad" },
-                      { id: "CARD", label: "Card" },
-                      { id: "BANK", label: "Bank" },
-                    ].map((ch) => (
-                      <button
-                        key={ch.id}
-                        type="button"
-                        onClick={() => setSelectedPaymentChannel(ch.id)}
-                        className={`py-1.5 rounded-lg text-xs font-semibold border transition-all text-center ${
-                          selectedPaymentChannel === ch.id
-                            ? "bg-emerald-50 border-emerald-600 text-emerald-800 font-bold ring-1 ring-emerald-500"
-                            : "border-slate-200 hover:bg-slate-50 text-slate-600"
-                        }`}
-                      >
-                        {ch.label}
-                      </button>
-                    ))}
-                  </div>
+              {/* Multi-Method Selector Chips */}
+              <div className="grid grid-cols-2 gap-1.5">
+                {AVAILABLE_PAYMENT_METHODS.map((method) => {
+                  const isSelected = selectedPaymentMethods.includes(method.id);
+                  return (
+                    <button
+                      key={method.id}
+                      type="button"
+                      onClick={() => handleTogglePaymentMethod(method.id)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                        isSelected
+                          ? "bg-emerald-600 border-emerald-600 text-white shadow-xs font-bold"
+                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {method.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Collected Amounts Inputs */}
+              {selectedPaymentMethods.length > 0 && (
+                <div className="space-y-2 pt-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-700 block">
+                    Collected Amounts:
+                  </span>
+                  {selectedPaymentMethods.map((m) => {
+                    const meta = AVAILABLE_PAYMENT_METHODS.find((pm) => pm.id === m);
+                    return (
+                      <div key={m} className="flex items-center gap-2">
+                        <span className="w-24 text-xs font-medium text-slate-600 truncate">
+                          {meta?.label}:
+                        </span>
+                        <div className="relative flex-1">
+                          <span className="absolute left-2.5 top-1.5 text-xs text-slate-400 font-mono">৳</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            max={netTotal}
+                            value={paymentAmounts[m] === undefined ? "" : paymentAmounts[m]}
+                            onChange={(e) => handlePaymentAmountChange(m, e.target.value)}
+                            placeholder="0"
+                            className="h-8 pl-6 text-xs font-mono font-bold bg-white"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              {/* Split Payment Inputs */}
-              {paymentMode === "SPLIT" && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">Cash (৳)</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={splitCashAmount}
-                        onChange={(e) => setSplitCashAmount(e.target.value)}
-                        className="h-8 text-xs bg-white font-bold text-slate-800"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">Bank/Digital (৳)</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={splitBankAmount}
-                        onChange={(e) => setSplitBankAmount(e.target.value)}
-                        className="h-8 text-xs bg-white font-bold text-slate-800"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center text-[11px] pt-1">
-                    <span className="text-slate-500">Allocated Sum:</span>
-                    <span className={`font-bold ${splitTotal === netTotal ? "text-emerald-700" : "text-rose-600"}`}>
-                      ৳{splitTotal.toLocaleString()} / ৳{netTotal.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {paymentMode === "PAY_LATER" && (
-                <p className="text-[11px] text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200 flex items-center gap-1.5">
+              {dueAmount > 0 && !selectedCustomer?.id && (
+                <p className="text-[11px] text-rose-600 bg-rose-50 p-2 rounded-lg border border-rose-200 flex items-center gap-1.5 font-medium">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  Due balance of ৳{netTotal.toLocaleString()} will be charged to the customer&apos;s ledger.
+                  Customer must be selected to record a due balance of ৳{dueAmount.toLocaleString()}.
                 </p>
               )}
             </div>
@@ -1438,9 +1487,31 @@ export default function PosTerminalPage() {
               )}
               <div className="border-t border-slate-200 pt-2 flex justify-between items-center">
                 <span className="text-sm font-extrabold text-slate-900">Net Payable:</span>
-                <span className="text-lg font-black text-emerald-700">
+                <span className="text-base font-black text-slate-900">
                   ৳{netTotal.toLocaleString()}
                 </span>
+              </div>
+
+              {/* Paid and Due row */}
+              <div className="border-t border-dashed border-slate-200 pt-2 space-y-1">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-600 font-semibold">Total Paid:</span>
+                  <span className="font-bold text-emerald-700 font-mono">
+                    ৳{totalPaidAmount.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-600 font-semibold">Due Balance:</span>
+                  {dueAmount > 0 ? (
+                    <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 font-mono font-bold">
+                      ৳{dueAmount.toLocaleString()} DUE
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-[10px]">
+                      PAID IN FULL
+                    </Badge>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1496,6 +1567,15 @@ export default function PosTerminalPage() {
           setInvoiceModalOpen(false);
           clearCart();
         }}
+      />
+
+      {/* ========================================================================= */}
+      {/* RECENT SALES & DUE COLLECTION MODAL                                      */}
+      {/* ========================================================================= */}
+      <PosRecentSalesModal
+        isOpen={recentSalesOpen}
+        onClose={() => setRecentSalesOpen(false)}
+        branchId={currentBranchId}
       />
     </div>
   );
