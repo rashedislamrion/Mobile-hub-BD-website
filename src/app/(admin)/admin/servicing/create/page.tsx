@@ -137,6 +137,19 @@ export default function CreateServicingJobPage() {
   const [selectedDeviceTypeId, setSelectedDeviceTypeId] = useState("");
   const [selectedBrandId, setSelectedBrandId] = useState("");
   const [deviceModel, setDeviceModel] = useState("");
+  const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    if (!selectedBrandId) {
+      setAvailableModels([]);
+      return;
+    }
+    apiGet<{ id: string; name: string }[]>(`/service-lookups/models?brandId=${selectedBrandId}`)
+      .then((models) => {
+        if (Array.isArray(models)) setAvailableModels(models);
+      })
+      .catch(() => setAvailableModels([]));
+  }, [selectedBrandId]);
 
   // Section 4: Problem Details
   const [selectedProblemIds, setSelectedProblemIds] = useState<string[]>([]);
@@ -195,8 +208,8 @@ export default function CreateServicingJobPage() {
         apiGet<LookupItem[]>("/service-lookups/problem-types"),
         apiGet<LookupItem[]>("/service-lookups/warranty-periods"),
         apiGet<BrandItem[]>("/brands"),
-        apiGet<any>("/suppliers"),
-        apiGet<any>("/employees/technicians"),
+        apiGet<any>("/service-lookups/suppliers").catch(() => apiGet<any>("/suppliers")),
+        apiGet<any>("/service-lookups/technicians").catch(() => apiGet<any>("/employees/technicians")),
         apiGet<any>("/products?limit=100"),
       ]);
 
@@ -236,7 +249,7 @@ export default function CreateServicingJobPage() {
       if (techRes.status === "fulfilled") {
         const list = Array.isArray(techRes.value) ? techRes.value : techRes.value?.data || [];
         setTechnicians(list);
-        if (user && list.some((t: any) => t.id === user.id)) {
+        if (user && (list.some((t: any) => t.id === user.id) || (user as any).isTechnician)) {
           setSelectedTechnicianId(user.id);
         } else if (list.length > 0 && !selectedTechnicianId) {
           setSelectedTechnicianId(list[0].id);
@@ -784,7 +797,13 @@ export default function CreateServicingJobPage() {
                     required
                   />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">Defaults to logged-in technician</p>
+                {technicians.length === 0 ? (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    No active technicians found for this branch. Add or assign a technician in Admin &gt; HRM &gt; Employees.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-400 mt-1">Defaults to logged-in technician</p>
+                )}
               </div>
 
               <div>
@@ -840,10 +859,6 @@ export default function CreateServicingJobPage() {
                   value={selectedDeviceTypeId}
                   onChange={(e) => {
                     setSelectedDeviceTypeId(e.target.value);
-                    if (!e.target.value) {
-                      setSelectedBrandId("");
-                      setDeviceModel("");
-                    }
                   }}
                   className="w-full mt-1 h-9 rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   required
@@ -855,6 +870,11 @@ export default function CreateServicingJobPage() {
                     </option>
                   ))}
                 </select>
+                {deviceTypes.length === 0 && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    No device types yet — configure master data in Admin &gt; Settings &gt; Service Lookups or Catalog Categories.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -868,15 +888,19 @@ export default function CreateServicingJobPage() {
                       label: b.name,
                     }))}
                     value={selectedBrandId}
-                    disabled={!selectedDeviceTypeId}
                     onChange={(val) => {
                       setSelectedBrandId(val);
                       if (!val) setDeviceModel("");
                     }}
-                    placeholder={selectedDeviceTypeId ? "Select Brand..." : "Select device type first..."}
+                    placeholder="Select Brand..."
                     required
                   />
                 </div>
+                {brands.length === 0 && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    No brands yet — add one in Admin &gt; Products &gt; Brands.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -886,14 +910,26 @@ export default function CreateServicingJobPage() {
                 <div className="relative mt-1">
                   <Smartphone className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                   <Input
-                    placeholder={selectedBrandId ? "e.g. 13 Pro Max, S23 Ultra" : "Select brand first..."}
+                    list="device-models-datalist"
+                    placeholder={selectedBrandId ? "Pick from list or type model..." : "e.g. 13 Pro Max, S23 Ultra"}
                     value={deviceModel}
-                    disabled={!selectedBrandId}
                     onChange={(e) => setDeviceModel(e.target.value)}
                     className="pl-9 font-medium"
                     required
                   />
+                  <datalist id="device-models-datalist">
+                    {availableModels.map((m) => (
+                      <option key={m.id} value={m.name} />
+                    ))}
+                  </datalist>
                 </div>
+                {selectedBrandId && (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {availableModels.length > 0
+                      ? `${availableModels.length} models available in dropdown or type custom name`
+                      : "Type model name directly (e.g. iPhone 15 Pro, S24 Ultra)"}
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1072,6 +1108,11 @@ export default function CreateServicingJobPage() {
                               placeholder="Select Supplier..."
                               required
                             />
+                            {suppliers.length === 0 && (
+                              <p className="text-[10px] text-amber-600 mt-1">
+                                No suppliers yet — add one in Admin &gt; Accounting &gt; Suppliers.
+                              </p>
+                            )}
                           </div>
                         ) : row.sourceType === "OTHER" ? (
                           <div>

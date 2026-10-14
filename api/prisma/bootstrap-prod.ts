@@ -246,6 +246,24 @@ async function main() {
     console.log('✓ Business settings already exist. Existing configuration preserved.');
   }
 
+  // 8. Standard Service Lookups (Idempotent)
+  const defaultDeviceTypes = [
+    'Phone',
+    'Tablet',
+    'Laptop',
+    'Smart Watch',
+    'Desktop',
+    'Audio & Accessories',
+  ];
+  for (const name of defaultDeviceTypes) {
+    await prisma.deviceType.upsert({
+      where: { name },
+      create: { name, status: StaffStatus.ACTIVE },
+      update: {},
+    });
+  }
+  console.log(`✓ Seeded standard Device Types (${defaultDeviceTypes.length} types)`);
+
   console.log('----------------------------------------------------');
   console.log('Production bootstrap finished successfully!');
   console.log('----------------------------------------------------');

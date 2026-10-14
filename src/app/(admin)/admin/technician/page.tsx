@@ -142,10 +142,15 @@ export default function TechnicianWorkspacePage() {
   const [catalogProducts, setCatalogProducts] = useState<{ id: string; name: string; purchasePrice?: number; sellingPrice?: number }[]>([]);
 
   useEffect(() => {
-    apiGet<any>("/suppliers?limit=100").then((res) => {
+    apiGet<any>("/service-lookups/suppliers").then((res) => {
       const list = res?.data || res || [];
       if (Array.isArray(list)) setSuppliers(list);
-    }).catch(() => {});
+    }).catch(() => {
+      apiGet<any>("/suppliers?limit=100").then((res) => {
+        const list = res?.data || res || [];
+        if (Array.isArray(list)) setSuppliers(list);
+      }).catch(() => {});
+    });
     apiGet<any>("/products?limit=100").then((res) => {
       const list = res?.data || res || [];
       if (Array.isArray(list)) setCatalogProducts(list);
@@ -1230,6 +1235,11 @@ export default function TechnicianWorkspacePage() {
                               </option>
                             ))}
                           </select>
+                          {suppliers.length === 0 && (
+                            <p className="text-[10px] text-amber-600 mt-1">
+                              No suppliers yet — add one in Admin &gt; Accounting &gt; Suppliers.
+                            </p>
+                          )}
                         </div>
                       ) : row.sourceType === "OTHER" ? (
                         <div>
